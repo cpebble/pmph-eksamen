@@ -1,6 +1,7 @@
 */data/*
+data/
 bfast-monitor
-
+*.in
 # Created by https://www.toptal.com/developers/gitignore/api/vscode,vim,c++,cuda
 # Edit at https://www.toptal.com/developers/gitignore?templates=vscode,vim,c++,cuda
 
