@@ -34,10 +34,32 @@ void seq_mkX (int K, int N, float f, float* X_out){
 }
 
 // Filtered Matrix - Matrix Multiplication
-// X * X^T
-void seq_mmMulFilt(float* X, float* y, float* X_sqr){
-
+// X is assumed to be a nxm matrix
+void seq_mmMulFilt(float* X, float* y, float* X_sqr, int n, int m){
+        // Calculates X * X^T
+        for (int i = 0; i < n; i++)
+        {
+                for(int j = 0; j < n; j ++){
+                        int index_X_sqr = i*n + j; 
+                        X_sqr[index_X_sqr] = 0; 
+                        for(int k = 0; k < m; k ++){
+                                int index_X = i*n + k; 
+                                int index_X_T = k*m + i;
+                                X_sqr[index_X_sqr] += X[index_X] * X[index_X_T];
+                        }
+                }
+        }
+        //Maps y to every row in X_sqr
+        for (int i = 0; i < n; i++)
+        {
+                for (int j = 0; j < n; j++)
+                {
+                        int index = i*n + j; 
+                        X_sqr[index] = X_sqr[index] * y[j]; 
+                }       
+        }
 }
+                
 
 // We need to invert here
 // Allocate the [K][2K] array in here
