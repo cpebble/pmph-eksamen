@@ -39,9 +39,6 @@ void seq_mkX(int K, int N, float f, float* X_out){
         }        
 }
 
-bool isnan(float y){
-
-}
 
 // --- Filtered Matrix - Matrix Multiplication ---
 // Should multiply X*X^t and filter out the rows, where y is 0
@@ -50,13 +47,6 @@ bool isnan(float y){
 // y is a vector of size N 
 // Output is KxK matrix
 void seq_mmMulFilt(float* X, float* X_t, float* y, float* X_sqr, int N, int K){
-
-        //X: KxN, X:t: NxK, y: N
-        //vi skal gange X og X^t med hinanden 
-        //derefter filtre de rækker, hvor y er 0 ud med hinanden 
-        
-        //resultatet er en NxN matrise, hvor hver colunne, er 0, hvis target værdien også er nul
-        
         //Loops through the rows of X
         for (int i = 0; i < K; i++)
         {
