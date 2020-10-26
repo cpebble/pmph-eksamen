@@ -14,6 +14,7 @@ void seq_mkX(int K, int N, float f, float* X_out){
         //Loops through the rows
         for (int i = 0; i < K; i++)
         {
+                
                 //Loops through the indices in each row and creates the elements
                 for(int t = 0; t < N; t++){
                         //Calculates the current index for X_out
