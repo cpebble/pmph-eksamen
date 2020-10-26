@@ -4,7 +4,7 @@
 #include <math.h>
 #include <cmath>
 
-//-- Creates the interpolation matrix ---
+//--- Creates the interpolation matrix ---
 // K is the number of rows
 // N is the number of columns 
 // f is the frequency of the observations
@@ -13,8 +13,7 @@
 void seq_mkX(int K, int N, float f, float* X_out){
         //Loops through the rows
         for (int i = 0; i < K; i++)
-        {
-                
+        {             
                 //Loops through the indices in each row and creates the elements
                 for(int t = 0; t < N; t++){
                         //Calculates the current index for X_out
@@ -37,35 +36,44 @@ void seq_mkX(int K, int N, float f, float* X_out){
                                 } 
                         }                       
                 }
-        }
-        
+        }        
 }
 
-// Filtered Matrix - Matrix Multiplication
-// X is assumed to be a nxm matrix
-//Output is nxn matrix
-void seq_mmMulFilt(float* X, float* y, float* X_sqr, int n, int m){
-        // Calculates X * X^T
-        for (int i = 0; i < n; i++)
+bool isnan(float y){
+
+}
+
+// --- Filtered Matrix - Matrix Multiplication ---
+// Should multiply X*X^t and filter out the rows, where y is 0
+// X is a KxN matrix
+// X_t is a NxK matrix
+// y is a vector of size N 
+// Output is KxK matrix
+void seq_mmMulFilt(float* X, float* X_t, float* y, float* X_sqr, int N, int K){
+
+        //X: KxN, X:t: NxK, y: N
+        //vi skal gange X og X^t med hinanden 
+        //derefter filtre de rækker, hvor y er 0 ud med hinanden 
+        
+        //resultatet er en NxN matrise, hvor hver colunne, er 0, hvis target værdien også er nul
+        
+        //Loops through the rows of X
+        for (int i = 0; i < K; i++)
         {
-                for(int j = 0; j < n; j ++){
-                        int index_X_sqr = i*n + j; 
-                        X_sqr[index_X_sqr] = 0; 
-                        for(int k = 0; k < m; k ++){
-                                int index_X = i*n + k; 
-                                int index_X_T = k*m + i;
-                                X_sqr[index_X_sqr] += X[index_X] * X[index_X_T];
-                        }
-                }
-        }
-        //Maps y to every row in X_sqr
-        for (int i = 0; i < n; i++)
-        {
-                for (int j = 0; j < n; j++)
+                //Loops through the columns of X_t
+                for (int j = 0; j < K; j++)
                 {
-                        int index = i*n + j; 
-                        X_sqr[index] = X_sqr[index] * y[j]; 
-                }       
+                        float acc = 0; 
+                        //Calculates each element in X_sqr
+                        for(int p = 0; p < N; p++){
+                                int index_X = i*K + p; 
+                                int index_Xt = p*N + j; 
+                                float a = X[index_X] * X_t[index_Xt] *(1.0 - isnan(y[N]));
+                                acc += a; 
+                        }
+                        int index_Xsqr = K*i + j; 
+                        X_sqr[index_Xsqr] = acc; 
+                }               
         }
 }
                 
@@ -129,11 +137,6 @@ void seq_matInv (float* X_sqr, float* X_inv, int n){
         //create a gauss_jordan on Ap
         
     
-}
-
-
-bool isnan(float y){
-
 }
 
 // Filtered Matrix * Vector multiplication
