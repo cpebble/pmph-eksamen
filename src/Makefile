@@ -1,4 +1,4 @@
-CXX        = nvcc -O3 -arch=compute_35 -Wno-deprecated-gpu-targets
+CXX        = nvcc -g -G -arch=compute_35 -Wno-deprecated-gpu-targets
 
 SRC1 = main.cu
 SOURCES_CPP = main.cu 
