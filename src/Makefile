@@ -1,14 +1,15 @@
-CXX        = gcc -O3# -arch=compute_35 -Wno-deprecated-gpu-targets
+CXX        = nvcc -O3 -arch=compute_35 -Wno-deprecated-gpu-targets
 
 SRC1 = main.cu
-SOURCES_CPP = main.cu
-HELPERS     = cpu-kernels.cu.h cuda-kernels.cu.h helpers.cu
-EXECUTABLE1 = bfast-monitor
+SOURCES_CPP = main.cu 
+HELPERS     = helpers.cu.h cuda-kernels.cu.h cpu-kernels.cu.h
+EXECUTABLE1 = bfast-mon
 
 default: compile run
 
 .cu.o: $(SOURCES_CPP) $(HELPERS)
 	$(CXX) -c $@ $<
+
 
 compile: $(EXECUTABLE1) $(EXECUTABLE2)
 
