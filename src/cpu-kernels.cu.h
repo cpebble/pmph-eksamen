@@ -67,64 +67,68 @@ void seq_mmMulFilt(float* X, float* X_t, float* y, float* X_sqr, int N, int K){
         }
 }
                 
-void seq_scatter(float* X, int* I, float* D, int n){
 
-}
-
-void seq_gauss_jordan(float* A, int n, int m){
-        for (int i = 0; i < n; i++)
-        {
-                int v1 = A[i]; 
-                float _A[m]; 
-                for (int ind = 0; ind < m; ind++)
-                {
-                        int k = ind/m; 
-                        int j = ind % m; 
-                        if(v1 == 0.0){
-                                _A[ind] = A[k*m+j]; //er ikke sikker på om det skal være det
-                        }else
-                        {
-                                float x = A[j]/v1; 
-                                if(k < n -1){
-                                        _A[ind] = A[(k+1)*m+j] - A[(k+1)*m+i] * x; 
-                                }else
-                                {
-                                        _A[ind] = x; 
-                                }
-                                
-                        }
-                        
-                }
-                
-        }
-        //in  scatter A (iota nm) A'
-        
-}
 // We need to invert here
 // Allocate the [K][2K] array in here
-// X_sqr is a nxn matrix 
-// X_inv is the output
-void seq_matInv (float* X_sqr, float* X_inv, int n){
-        int m = 2*n; 
-        int nm = n*m; 
-        float Ap[nm]; 
-        for (int ind = 0; ind < nm; ind++)
-        {
-                int i = ind/m; 
-                int j = ind % m; 
-                if(j < n){
-                        int index = i* n+ j; //ved ikke om det er rigtigt
-                        Ap[ind] = X_sqr[index];
-                }else if (j == n + i)
-                {
-                        Ap[ind] = 1.0; 
-                }else
-                {
-                        Ap[ind] = 0.0
-                }    
-        }
+// X_sqr is a KxK matrix 
+// X_inv is the output and also a KxK matrix
+void seq_matInv (float* X_sqr, float* X_inv, int K){
+        float t1, t2; 
 
-        //create a gauss_jordan on Ap
+        //skal inverte X_sqr, der er en kxk matrise 
+        //først laver vi en unit-matrix af samme størrelse som X_sqr 
+
+        // Creates a matrix containing both X_sqr and a KxK identity matrix
+        float A[K][2*K]; 
+        for (int i = 0; i < K; i++)
+        {
+                for (int j = 0; i < K; i++)
+                {
+                        // X_sqr will be placed at the left side of A
+                        if(j < K){
+                                int index_Xsqr = i*K + j; 
+                                A[i][j] = X_sqr[index_Xsqr]; 
+                        }// The identity matrix will be placed to the rigth side of A
+                        else{
+                                if(i == j){
+                                        A[i][j] = 1.0; 
+                                }else{
+                                        A[i][j] = 0.0; 
+                                }
+                        }
+                }            
+        }
+        // Now we Gauss Jordan is performed 
+        for (int i = 0; i < K; i++)
+        {
+                t1 = A[i][i]; 
+                for (int j = 0; j < K; j++)
+                {
+                        A[i][j] = A[i][j]/t1; 
+                        A[i][j+K] = A[i][j+K]/t1; 
+                }
+                for(int p = 0; p < K; p++){
+                        t2 = A[p][i]; 
+                        for(int j = 0; j < K; j++){
+                                if(p == i){
+                                        break;
+                                }else{
+                                        A[p][j] = A[p][j] - A[i][j]*t2; 
+                                        A[p][j+K] = A[p][j+K] - A[i][j*K]*t2; 
+                                }
+                        }
+                }        
+        }
+        // Now we copy the elements from A to X_inv
+        for (int i = 0; i < K; i++)
+        {
+                for (int j = 0; i < K; i++)
+                {
+                        int index_Xinv = i*K+ j; 
+                        X_inv[index_Xinv] = A[i][j]; 
+                }              
+        }
+         
         
     
 }
