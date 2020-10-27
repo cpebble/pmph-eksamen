@@ -67,8 +67,7 @@ void seq_mmMulFilt(float* X, float* X_t, float* y, float* X_sqr, int N, int K){
         }
 }
                 
-
-// We need to invert here
+// --- Invert a matrix --- 
 // Allocate the [K][2K] array in here
 // X_sqr is a KxK matrix 
 // X_inv is the output and also a KxK matrix
@@ -114,7 +113,7 @@ void seq_matInv (float* X_sqr, float* X_inv, int K){
                                         break;
                                 }else{
                                         A[p][j] = A[p][j] - A[i][j]*t2; 
-                                        A[p][j+K] = A[p][j+K] - A[i][j*K]*t2; 
+                                        A[p][j+K] = A[p][j+K] - A[i][j+K]*t2; 
                                 }
                         }
                 }        
@@ -133,26 +132,42 @@ void seq_matInv (float* X_sqr, float* X_inv, int K){
     
 }
 
-// Filtered Matrix * Vector multiplication
-void seq_mvMulFilt(float* X, float* y, float* Beta_zero, int n, int m){
-        for (int i = 0; i < n; i++)
+// --- Filtered Matrix * Vector multiplication ---
+// Calculate X*y
+// K is assumed to a KxK matrix
+// Y is also supposed to be a vector of size Nx1
+// Output is y_out and will be vector of size Nx1
+void seq_mvMulFilt(float* X, float* y, float* y_out int K, int N){
+        for (int i = 0; i < K; i++)
         {
-                Beta_zero[i] = 0; 
-                for (int j = 0; j < m; j++)
-                {
-                        int index_X = n*i + j;
-                        float cur_X = X[index_X]; 
-                        float cur_y = y[j]; 
-                        float xy = cur_X * cur_y * (1.0 - isnan(cur_y)); 
-                        Beta_zero[i] += xy; //er ikke sikker på at den skal indsættes der                         
-                }                
-        }       
+             y_out[i] = 0; 
+             for (int j = 0; j < N; j++)
+             {
+                     int index_X = i*K + j; 
+                     y_out[i] += X[index_X] * y[j]; 
+             }
+                
+        }        
 }
 
 
 // UnFiltered matrix * vector multiplication
 // Used for calculating Beta, and y_preds
-void seq_mvMult(float* X, float* y, float* X_out);
+// X_sqr is an KxK matrix
+// y is an vector of size Kx1
+// Ouput will be B_out, which an Kx1 vector
+void seq_mvMult(float* X_sqr, float* y, float* B_out){
+        //her skal vi gange X_sqr, så vi får en vector med størrelsen K
+        for (int i = 0; i < K; i++)
+        {
+                B_out[i] = 0; 
+                for (int j = 0; j < K; j++)
+                {
+                        int index_Xsqr = i*k +j; 
+                        B_out[i] += X_sqr[index_Xsqr] * y[j]; 
+                }                
+        }
+}
 
 // Calculates Y - Y_pred
 //NB: Has to check if nan and filter those out
