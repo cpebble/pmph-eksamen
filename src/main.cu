@@ -99,11 +99,8 @@ int main(int argc, char* argv[]){
     dataset* ds = (dataset*) malloc(sizeof(dataset));
     char* dsPath = "data/peru.clean";
     readDataset(dsPath, ds);
-    printf("%d\n%d\n%d\n%ff\n%ff\n%ff\n%d\n%d\n",
-            ds->trend, ds->k, ds->n,
-            ds->freq, ds->hfrac, ds->lam,
-            ds->N, ds->m
-        );
+    printf("Ready to work on dataset of %d images, with %d pixels each\n", ds->N, 
+            ds->m);
     return 0;
 }
 
