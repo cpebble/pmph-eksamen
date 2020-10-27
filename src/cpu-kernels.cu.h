@@ -41,7 +41,7 @@ void seq_mkX(int K, int N, float f, float* X_out){
 
 
 // --- Filtered Matrix - Matrix Multiplication ---
-// Should multiply X*X^t and filter out the rows, where y is 0
+// Should multiply X*X^t and filter out the rows, where y is NAN
 // X is a KxN matrix
 // X_t is a NxK matrix
 // y is a vector of size N 
@@ -66,7 +66,8 @@ void seq_mmMulFilt(float* X, float* X_t, float* y, float* X_sqr, int N, int K){
                 }               
         }
 }
-                
+
+
 // --- Invert a matrix --- 
 // Allocate the [K][2K] array in here
 // X_sqr is a KxK matrix 
@@ -151,7 +152,7 @@ void seq_mvMulFilt(float* X, float* y, float* y_out int K, int N){
 }
 
 
-// UnFiltered matrix * vector multiplication
+// --- UnFiltered matrix * vector multiplication - calculates the prediction --- 
 // Used for calculating Beta, and y_preds
 // X_sqr is an KxK matrix
 // y is an vector of size Kx1
@@ -169,29 +170,54 @@ void seq_mvMult(float* X_sqr, float* y, float* B_out){
         }
 }
 
-// Calculates Y - Y_pred
-//NB: Has to check if nan and filter those out
-// Takes Y and Y_hat
-// Outputs:
-/// Nbar: # valid keys - int
-/// r: # prediction errors - [N]float
-/// I: Indices of valid keys - [Nbar]int
-//
-// Also remember that we pad the resulting r array to size N.
-void seq_YErrorCalculation(
-        float* Y, float* Ypred, int N,
-        int Nbar, float* r, int* I
-        );
+// --- Calculates Y - Y_pred --- 
+// Y is the real targets, which has size N
+// Ypred is the predictions, which has size N
+// Out will be R, which is the error
+void seq_YErrorCalculation(float* Y, float* Ypred, float* R, int N){
+        for (int i = 0; i < N; i++)
+        {
+                R[i] = Ypred[i] - Y[i]; 
+        }        
+}
 
-void seq_NSSigma(
-        float* Y_errors, float* Y_historic,
-        float* sigma, float* h, float* ns
-        );
+// Y_historic is an matrix containing, where each row is a time-serie for a pixel 
+// N is the number of rows in Y_historic - which is the number of pixels
+// M is the number of cols in Y_historic  
+void seq_NSSigma(float* Y_errors, float* Y_historic, float* sigma, float* h, float* ns, int N, int M, float hfrac){
 
-void seq_msFst(
-        int hMax, float* Y_error, int N, int n,
-        float* msFst, float* bounds
-        );
+        //for hver række i y udregner vi et sigma, ns og hs 
+        for(int yh = 0; yh < N; yh++){
+                //Calculates the ns value for the current pixel
+                ns[yh] = 0; 
+                for (int ye = 0; ye < M; ye++)
+                {
+                        float cur_ye = Y_historic[yh*N + ye]; 
+                        if(!isnan(cur_ye)){
+                                ns[yh] += 1;         
+                        }
+                }
+                //Calculates the sigma value for the current pixel
+                sigma[yh] = 0;
+                for (int i = 0; i < N; i++)
+                {
+                        float cur = 0  
+                        if(i < ns[yh]){
+                                cur = Y_errors[yh*N + ye]; 
+                        }
+                        cur = cur*cur; 
+                        sigma[yh] += cur;
+                }
+                h[yh] = ns[yh] * hfrac;      
+        }
+}
+
+void seq_msFst(int hMax, float* Y_error, int N, int n, float* msFst, float* bounds, float* hs, float* ns, float* hs ){
+
+        //looper over rækkerne i Y_errors 
+        
+
+}
 
 void seq_mosum(
         float* Nss, float* nss, float* sigmas, float* hs,
