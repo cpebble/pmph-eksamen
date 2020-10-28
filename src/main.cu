@@ -6,7 +6,7 @@
 #include <errno.h>
 #include "helpers.cu.h"
 #include "cuda-kernels.cu.h"
-//#include "cpu-kernels.cu.h"
+#include "cpu-kernels.cu.h"
 
 int validate(){
     return 0;
@@ -95,13 +95,12 @@ int readDataset(char* pathname, dataset* ds){
     fclose(file);
     return 0;
 }
-
 int validate(dataset* ds){
     // KERNEL 1
     // Make interpolation matrix
     printf("Creating X matrix\n");
     int k2p2 = 2*ds->k + 2;
-    int k2p2_ = (trend > 0) ? k2p2 : k2p2-1;
+    int k2p2_ = (ds->trend > 0) ? k2p2 : k2p2-1;
     float* X_host = (float*) malloc(k2p2_ * ds->N * sizeof(float));
     seq_mkX(k2p2_, ds->N, ds->freq, X_host);
 
@@ -142,13 +141,13 @@ int validate(dataset* ds){
     printf("Filtered first\n");
     float* beta0_host = (float*) malloc(k2p2_ * ds->m * sizeof(float));
     for(int row = 0; row < ds->m; row++){
-        sec_mvMulFilt(Xh_host, (Yh_host + (row*ds->n)), beta0_host+(row*k2p2_), k2p2, ds->n);
+        seq_mvMulFilt(Xh_host, (Yh_host + (row*ds->n)), beta0_host+(row*k2p2_), k2p2, ds->n);
     }
 
     printf("Unfiltered beta and y_preds\n");
     float* beta_host = (float*) malloc(k2p2_ * ds->m * sizeof(float));
     for(int row = 0; row < ds->m; row++){
-        sec_mvMul(Xinv_host, (beta0_host + (row*k2p2_)), beta_host+(row*k2p2_), k2p2_, k2p2_);
+        seq_mvMul(Xinv_host, (beta0_host + (row*k2p2_)), beta_host+(row*k2p2_), k2p2_, k2p2_);
     }
     float* ypreds_host = (float*) malloc(ds->N * ds->m * sizeof(float));
     // Transpose X
@@ -156,23 +155,82 @@ int validate(dataset* ds){
     seq_transpose(X_host, Xt_host, k2p2_, ds->N);
     
     for(int row = 0; row < ds->m; row++){
-        sec_mvMul(Xt_host, beta_host + (row*k2p2_), ypreds_host + (row*ds->N), ds->N, k2p2_);
+        seq_mvMul(Xt_host, beta_host + (row*k2p2_), ypreds_host + (row*ds->N), ds->N, k2p2_);
     }
     printf("[!]K4 Done\n");
     // Kernel 5
     printf("Calculating Y_errors\n");
     float* r_host = (float*) malloc(ds->m * ds->N * sizeof(float));
-    sec_YErrorCalculation(ds->images, ypreds_host, r_host, ds->m, ds->N);
+    seq_YErrorCalculation(ds->images, ypreds_host, r_host, ds->m, ds->N);
     printf("[!]K5 Done\n");
     
     // Kernel 6
     printf("Calculating Sigmas\n");
     float* sigmas_host = (float*) malloc(ds->m * sizeof(float));
     float* ns_host     = (float*) malloc(ds->m * sizeof(float));
-    float* hs_host     = (float*) malloc(ds->m * sizeof(float));
-    sec_NSSigma(r_host, yh_host, sigmas_host, ns_host, hs_host, ds->N, ds->m, ds->hfrac, k2p2_);
+    int* hs_host     = (int*) malloc(ds->m * sizeof(float));
+    seq_NSSigma(r_host, Yh_host, sigmas_host, ns_host, hs_host, ds->N, ds->m, ds->hfrac, k2p2_);
     printf("Sigmas calculated\n");
     printf("[!]K6 Done\n");
+
+    // Kernel 7
+    printf("Calculating hmax: ");
+    int hmax = -100000;
+    for(int i = 0; i < ds->m; i++){
+        if (hs_host[i] > hmax)
+            hmax = hs_host[i];
+    } 
+    printf("%d\n", hmax);
+    float* MOfst_host = (float*) malloc(ds->m * sizeof(float*));
+    float* BOUND_host = (float*) malloc((ds->N - ds->n)*sizeof(float));
+    seq_msFst(hmax, r_host, hs_host, ns_host, MOfst_host, BOUND_host, ds->N, ds->n);
+    printf("Calculated MO_fsts and Bounds\n");
+    printf("[!]K7 Done\n");
+
+    float* breaks_host = (float*) malloc(ds->m * sizeof(float*));
+    float* means_host  = (float*) malloc(ds->m * sizeof(float*));
+    
+    // Moving sums
+    for(int pixel = 0; pixel < ds->m; pixel++){
+        float* _pixel = ds->images + (pixel*ds->m);
+        float* MO = (float*) malloc((ds->N - ds->n) * sizeof(float));
+        // Calculate SUM^t_
+        float sigSqrN = sigmas_host[pixel] * sqrtf(ns_host[pixel]);
+        for(int i = 0; i < ds->N - ds->n; i++){
+            if (i == 0){ // Put in mo_fst
+                MO[i] = MOfst_host[pixel];
+            }
+            // I'm not sure this needs to be there, since we allow nan in MO
+            //if(isnan(_pixel[i]))
+                //MO[i] = MO[i-1]; // If Nan, assume no forest cut down in the meantime
+                //continue;
+            int h = hs_host[pixel];
+            // r[n + t] - r[n + t - h]
+            float tmp = (r_host[pixel*ds->m + ds->n + i] - r_host[pixel*ds->m + (ds->n + i - h)]);
+            MO[i] = tmp / sigSqrN;
+
+        }
+        // Now MO is calculated
+        int firstBreak = -1;
+        for (int j = 0; j < ds->N - ds->n; j++){
+            float b = BOUND_host[j];
+            float mo= MO[j];
+            if (!isnan(mo)){
+                if (fabsf(mo) > b){
+                    firstBreak = j;
+                    break;
+                }
+            }
+        }
+        breaks_host[pixel] = firstBreak;
+    }
+
+    // Free everything!!!
+    // TODO:
+    free(X_host);
+    free(Xh_host);
+    return 0;
+    
 }
 
 

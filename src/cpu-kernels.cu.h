@@ -156,7 +156,7 @@ void seq_mvMulFilt(float* X, float* y, float* y_out int K, int N){
 // X_sqr is an KxK matrix
 // y is an vector of size Kx1
 // Ouput will be B_out, which an Kx1 vector
-void seq_mvMult(float* X_sqr, float* y, float* B_out){
+void seq_mvMul(float* X_sqr, float* y, float* B_out){
         //her skal vi gange X_sqr, så vi får en vector med størrelsen K
         for (int i = 0; i < K; i++)
         {
@@ -247,7 +247,7 @@ void seq_NSSigma(float* Y_errors, float* Y_historic,
 
 // --- Kernel 7 ---
 // 
-void seq_msFst(int hMax, float* Y_error, float* hss, float* nss, float* msFst, float* bounds, int N, int M){
+void seq_msFst(int hMax, float* Y_error, int* hss, float* nss, float* msFst, float* bounds, int N, int M){
 
         //looper hen over rækkerne i de tre matriser, Y_errors, nss og hss 
 
@@ -262,4 +262,10 @@ void seq_mosum(
         float* breaks, float* means
         );
 
+// HELPERS
+void seq_transpose(float* X_in, float* X_out, int rows, int cols);
+
 #endif
+
+
+
