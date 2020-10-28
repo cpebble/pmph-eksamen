@@ -45,25 +45,25 @@ void seq_mkX(int K, int N, float f, float* X_out){
 // X_t is a NxK matrix
 // y is a vector of size N 
 // Output is KxK matrix
-void seq_mmMulFilt(float* X, float* X_t, float* y, float* X_sqr, int N, int K){
+void seq_mmMulFilt(float* X, float* X_t, float* y, float* X_sqr, int n, int K){
         //Loops through the rows of X
-        for (int i = 0; i < K; i++)
+        /*for (int i = 0; i < K; i++)
         {
                 //Loops through the columns of X_t
                 for (int j = 0; j < K; j++)
                 {
                         float acc = 0; 
                         //Calculates each element in X_sqr
-                        for(int p = 0; p < N; p++){
+                        for(int p = 0; p < n; p++){
                                 int index_X = i*K + p; 
                                 int index_Xt = p*N + j; 
-                                float a = X[index_X] * X_t[index_Xt] *(1.0 - isnan(y[N]));
+                                float a = X[index_X] * X_t[index_Xt] *(1.0 - isnan(y[p]));
                                 acc += a; 
                         }
                         int index_Xsqr = K*i + j; 
                         X_sqr[index_Xsqr] = acc; 
                 }               
-        }
+        }*/
 }
 
 
@@ -72,7 +72,7 @@ void seq_mmMulFilt(float* X, float* X_t, float* y, float* X_sqr, int N, int K){
 // X_sqr is a KxK matrix 
 // X_inv is the output and also a KxK matrix
 void seq_matInv (float* X_sqr, float* X_inv, int K){
-        float t1, t2; 
+      /*  float t1, t2; 
 
         //skal inverte X_sqr, der er en kxk matrise 
         //først laver vi en unit-matrix af samme størrelse som X_sqr 
@@ -126,7 +126,7 @@ void seq_matInv (float* X_sqr, float* X_inv, int K){
                         int index_Xinv = i*K+ j; 
                         X_inv[index_Xinv] = A[i][j]; 
                 }              
-        }
+        }*/
          
         
     
@@ -134,11 +134,11 @@ void seq_matInv (float* X_sqr, float* X_inv, int K){
 
 // --- Filtered Matrix * Vector multiplication ---
 // Calculate X*y
-// K is assumed to a KxK matrix
+// X is assumed to a KxN matrix
 // Y is also supposed to be a vector of size Nx1
 // Output is y_out and will be vector of size Nx1
 void seq_mvMulFilt(float* X, float* y, float* y_out int K, int N){
-        for (int i = 0; i < K; i++)
+      /*  for (int i = 0; i < K; i++)
         {
              y_out[i] = 0; 
              for (int j = 0; j < N; j++)
@@ -147,7 +147,7 @@ void seq_mvMulFilt(float* X, float* y, float* y_out int K, int N){
                      y_out[i] += X[index_X] * y[j]; 
              }
                 
-        }        
+        }    */    
 }
 
 
@@ -156,28 +156,31 @@ void seq_mvMulFilt(float* X, float* y, float* y_out int K, int N){
 // X_sqr is an KxK matrix
 // y is an vector of size Kx1
 // Ouput will be B_out, which an Kx1 vector
-void seq_mvMul(float* X_sqr, float* y, float* B_out){
+void seq_mvMult(float* X_sqr, float* y, float* B_out, int K, int N){
         //her skal vi gange X_sqr, så vi får en vector med størrelsen K
-        for (int i = 0; i < K; i++)
+     /*   for (int i = 0; i < K; i++)
         {
                 B_out[i] = 0; 
                 for (int j = 0; j < K; j++)
                 {
-                        int index_Xsqr = i*k +j; 
+                        int index_Xsqr = i*K +j; 
                         B_out[i] += X_sqr[index_Xsqr] * y[j]; 
                 }                
-        }
+        }*/
 }
 
 // --- Calculates Y - Y_pred --- 
 // Y is the real targets, which has size N
 // Ypred is the predictions, which has size N
 // Out will be R, which is the error
-void seq_YErrorCalculation(float* Y, float* Ypred, float* R, int N){
-        for (int i = 0; i < N; i++)
-        {
-                R[i] = Ypred[i] - Y[i]; 
-        }        
+void seq_YErrorCalculation(float* Y, float* Ypred, float* R, int N, int M){
+      /*  for(int i = 0; i < M; i++){
+                for (int j = 0; j < N; j++)
+                {
+                        int index = i*M + j; 
+                        R[index] = Ypred[index] - Y[index]; 
+                }        
+        }*/
 }
 
 
@@ -189,7 +192,7 @@ void seq_YErrorCalculation(float* Y, float* Ypred, float* R, int N){
 // n is the number of rows in Y_historic - which is the number of pixels
 // m is the number of cols in Y_historic  
 void seq_NSSigma(float* Y_errors, float* Y_historic, 
-        float* sigmas, float* hs, float* nss, int n, int m, float hfrac){
+     /*   float* sigmas, float* hs, float* nss, int n, int m, float hfrac){
 
         // Loops through each row of Y_historic and Y_errors
         // For each iteration, we creates values for nss, hs and sigmas
@@ -242,12 +245,12 @@ void seq_NSSigma(float* Y_errors, float* Y_historic,
                         sigma[yh] += cur;
                 }
                 h[yh] = ns[yh] * hfrac;      
-        }
+        }*/
 }
 
 // --- Kernel 7 ---
 // 
-void seq_msFst(int hMax, float* Y_error, int* hss, float* nss, float* msFst, float* bounds, int N, int M){
+void seq_msFst(int hMax, float* Y_error, float* hss, float* nss, float* msFst, float* bounds, int N, int n){
 
         //looper hen over rækkerne i de tre matriser, Y_errors, nss og hss 
 

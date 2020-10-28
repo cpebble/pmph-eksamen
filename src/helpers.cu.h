@@ -26,11 +26,6 @@ struct dataset {
     float* images;
 } ;
 
-struct BITuple {
-    bool isBreak;
-    int index;
-}
-
 // Read an array of ints in futhark format
 int readIntArray(int N, int* arr, FILE* fp){
     char f = (char) fgetc(fp);
