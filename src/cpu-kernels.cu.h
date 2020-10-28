@@ -2,7 +2,6 @@
 #ifndef _CPU_KERNELS
 #define _CPU_KERNELS
 #include <math.h>
-#include <cmath>
 
 //--- Creates the interpolation matrix ---
 // K is the number of rows
@@ -181,10 +180,44 @@ void seq_YErrorCalculation(float* Y, float* Ypred, float* R, int N){
         }        
 }
 
+
+
+
+// --- Kernel 6 ---
+// Creates the lists hs, nss and sigmas, whih will be used in later calculatations
 // Y_historic is an matrix containing, where each row is a time-serie for a pixel 
-// N is the number of rows in Y_historic - which is the number of pixels
-// M is the number of cols in Y_historic  
-void seq_NSSigma(float* Y_errors, float* Y_historic, float* sigma, float* h, float* ns, int N, int M, float hfrac){
+// n is the number of rows in Y_historic - which is the number of pixels
+// m is the number of cols in Y_historic  
+void seq_NSSigma(float* Y_errors, float* Y_historic, 
+        float* sigmas, float* hs, float* nss, int n, int m, float hfrac){
+
+        // Loops through each row of Y_historic and Y_errors
+        // For each iteration, we creates values for nss, hs and sigmas
+        for (int i = 0; i < n; i++)
+        {
+                float val_ns = 0; 
+                float val_h = 0; 
+                float val_sigma = 0; 
+
+                // Loops through the element in a row in Y_historic 
+                for (int j = 0; j < m; j++)
+                {
+                        // Current value of Y_historic
+                        int val_Yh = Y_historic[i *n + j];
+                        if(isnan(val_Yh)){
+                                val_ns += 1;
+                        }
+                }
+
+                //vi skal ligger værdien 
+                
+
+        }
+        
+
+
+
+
 
         //for hver række i y udregner vi et sigma, ns og hs 
         for(int yh = 0; yh < N; yh++){
@@ -212,10 +245,14 @@ void seq_NSSigma(float* Y_errors, float* Y_historic, float* sigma, float* h, flo
         }
 }
 
-void seq_msFst(int hMax, float* Y_error, int N, int n, float* msFst, float* bounds, float* hs, float* ns, float* hs ){
+// --- Kernel 7 ---
+// 
+void seq_msFst(int hMax, float* Y_error, float* hss, float* nss, float* msFst, float* bounds, int N, int M){
 
-        //looper over rækkerne i Y_errors 
-        
+        //looper hen over rækkerne i de tre matriser, Y_errors, nss og hss 
+
+        //looper hen over hvert element i hver række for de tre matriser
+        // for hver af de tre elementer 
 
 }
 
