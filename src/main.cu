@@ -140,18 +140,39 @@ int validate(dataset* ds){
     // Kernel 4
     printf("running Vector Multiplication and calculating betas\n");
     printf("Filtered first\n");
-    float* beta0_host = (float*) malloc(k2p2_ * sizeof(float));
-    sec_mvMulFilt(Xh_host, Yh_host, beta0_host, k2p2, ds->n);
+    float* beta0_host = (float*) malloc(k2p2_ * ds->m * sizeof(float));
+    for(int row = 0; row < ds->m; row++){
+        sec_mvMulFilt(Xh_host, (Yh_host + (row*ds->n)), beta0_host+(row*k2p2_), k2p2, ds->n);
+    }
+
     printf("Unfiltered beta and y_preds\n");
-    float* beta_host = (float*) malloc(k2p2_ * sizeof(float));
-    seq_mvMul(Xinv_host, beta0_host, K, ds->n);
-    float* ypreds_host = (float*) malloc(ds->N * sizeof(float));
+    float* beta_host = (float*) malloc(k2p2_ * ds->m * sizeof(float));
+    for(int row = 0; row < ds->m; row++){
+        sec_mvMul(Xinv_host, (beta0_host + (row*k2p2_)), beta_host+(row*k2p2_), k2p2_, k2p2_);
+    }
+    float* ypreds_host = (float*) malloc(ds->N * ds->m * sizeof(float));
     // Transpose X
     float* Xt_host = (float*) malloc(ds->N * k2p2_ * sizeof(float));
     seq_transpose(X_host, Xt_host, k2p2_, ds->N);
-    seq_mvMul(Xt_host, beta, K, ds->N);
     
-
+    for(int row = 0; row < ds->m; row++){
+        sec_mvMul(Xt_host, beta_host + (row*k2p2_), ypreds_host + (row*ds->N), ds->N, k2p2_);
+    }
+    printf("[!]K4 Done\n");
+    // Kernel 5
+    printf("Calculating Y_errors\n");
+    float* r_host = (float*) malloc(ds->m * ds->N * sizeof(float));
+    sec_YErrorCalculation(ds->images, ypreds_host, r_host, ds->m, ds->N);
+    printf("[!]K5 Done\n");
+    
+    // Kernel 6
+    printf("Calculating Sigmas\n");
+    float* sigmas_host = (float*) malloc(ds->m * sizeof(float));
+    float* ns_host     = (float*) malloc(ds->m * sizeof(float));
+    float* hs_host     = (float*) malloc(ds->m * sizeof(float));
+    sec_NSSigma(r_host, yh_host, sigmas_host, ns_host, hs_host, ds->N, ds->m, ds->hfrac, k2p2_);
+    printf("Sigmas calculated\n");
+    printf("[!]K6 Done\n");
 }
 
 
