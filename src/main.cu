@@ -102,7 +102,7 @@ int validate(dataset* ds){
     int k2p2 = 2*ds->k + 2;
     int k2p2_ = (ds->trend > 0) ? k2p2 : k2p2-1;
     float* X_host = (float*) malloc(k2p2_ * ds->N * sizeof(float));
-    seq_mkX(k2p2_, ds->N, ds->freq, X_host);
+    seq_mkX(k2p2_, ds->N, ds->freq, ds->mappingIndices, X_host);
 
     printf("Transposing matrices and extracting Historical data\n");
     float* Xh_host = (float*) malloc(k2p2_ * ds->n * sizeof(float));
@@ -123,12 +123,13 @@ int validate(dataset* ds){
     }
     // Transpose X
     seq_transpose(Xh_host, Xth_host, k2p2_, ds->n);
+    printMatrix(Xth_host,  ds-> n, k2p2_);
     printf("[!]K1 done\n");
 
     // KERNEL 2
     printf("Creating Xsqr\n");
     float* Xsqr_host = (float*) malloc(k2p2_ * k2p2_ * sizeof(float));
-    seq_mmMulFilt(Xh_host, Xth_host, Yh_host, Xsqr_host, ds->n, k2p2_);
+    seq_mmMulFilt(Xh_host, Xth_host, Yh_host, Xsqr_host, ds->n, k2p2_, k2p2);
     printf("[!]K2 Done\n");
     // KERNEL 3
     printf("Inverting Xsqr\n");
@@ -169,7 +170,7 @@ int validate(dataset* ds){
     float* sigmas_host = (float*) malloc(ds->m * sizeof(float));
     float* ns_host     = (float*) malloc(ds->m * sizeof(float));
     int* hs_host     = (int*) malloc(ds->m * sizeof(float));
-    seq_NSSigma(r_host, Yh_host, sigmas_host, ns_host, hs_host, ds->N, ds->m, ds->hfrac, k2p2_);
+    seq_NSSigma(r_host, Yh_host, sigmas_host, hs_host, ns_host, ds->N, ds->m, k2p2_, ds->hfrac);
     printf("Sigmas calculated\n");
     printf("[!]K6 Done\n");
 
@@ -235,10 +236,31 @@ int validate(dataset* ds){
 
 
 int main(int argc, char* argv[]){
+    float* a = (float*)malloc(8*sizeof(float));
+    float* b = (float*)malloc(8*sizeof(float));
+    for(int i = 0; i < 4; i++){
+        for(int j = 0; j < 2; j++){
+            a[i*2+j] = (float)(i+j);
+        }
+    }
+    printMatrix(a, 4, 2);
+    for(int i = 0; i < 2; i++){
+        for(int j = 0; j < 4; j++){
+            b[i*4+j] = (float)(i+j);
+        }
+    }
+    printMatrix(b, 2, 4);
+    float* c = (float*)malloc(4*4*sizeof(float));
+    float* idk=(float*)malloc(1024*sizeof(float));
+    seq_mmMulFilt(a, b, idk, c, 4, 2, 4);
+    printMatrix(c, 4, 4);
+
+    return 0;
     dataset* ds = (dataset*) malloc(sizeof(dataset));
-    char* dsPath = "data/peru.clean";
+    char* dsPath = "data/small_peru.clean";
     readDataset(dsPath, ds);
     printf("Ready to work on dataset of %d images, with %d pixels each\n", ds->N, 
             ds->m);
+    validate(ds);
     return 0;
 }

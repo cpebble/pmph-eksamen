@@ -5,7 +5,7 @@ SOURCES_CPP = main.cu
 HELPERS     = helpers.cu.h cuda-kernels.cu.h cpu-kernels.cu.h
 EXECUTABLE1 = bfast-mon
 
-default: compile run
+default: compile
 
 .cu.o: $(SOURCES_CPP) $(HELPERS)
 	$(CXX) -c $@ $<

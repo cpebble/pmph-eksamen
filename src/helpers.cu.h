@@ -13,6 +13,17 @@ int timeval_subtract(struct timeval *result, struct timeval *t2, struct timeval 
 int testme(int n){
     return n*n;
 }
+void printMatrix(float* mat, int rows, int cols){
+    printf("[");
+    for (int r = 0; r < rows; r++){
+        printf("[");
+        for(int c = 0; c < cols; c++){
+            printf("%.3f, ", mat[cols*r + c]);
+        }
+        printf("], ");
+    }
+    printf("]\n");
+}
 struct dataset {
     int trend;
     int k;
