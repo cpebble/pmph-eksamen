@@ -1,7 +1,14 @@
+#ifndef _HELPERS 
+#define _HELPERS
 #include <sys/time.h>
 #include <time.h> 
-// Will include helper scripts for time values, validations, etc
+#define I2(r,c,w) (r*w+c)
+#define I3(z,y,x,h,w) (h*w*z+w*y+x)
 
+// Will include helper scripts for time values, validations, etc
+int i2(int r,int c,int w){
+    return (r*w+c);
+}
 int timeval_subtract(struct timeval *result, struct timeval *t2, struct timeval *t1)
 {
     unsigned int resolution=1000000;
@@ -21,6 +28,21 @@ void printMatrix(float* mat, int rows, int cols){
             printf("%.3f, ", mat[cols*r + c]);
         }
         printf("], ");
+    }
+    printf("]\n");
+}
+void print3dMatrix(float* mat, int mats, int rows, int cols){
+    printf("[");
+    for (int m = 0; m < mats; m++){
+        printf("\n[");
+        for (int r = 0; r < rows; r++){
+            printf("\n\t[");
+            for(int c = 0; c < cols; c++){
+                printf("%.3f, ", mat[I3(m,r,c,rows,cols)]);
+            }
+            printf("], ");
+        }
+        printf("\n]");
     }
     printf("]\n");
 }
@@ -80,3 +102,5 @@ int readFloatArray(int N, float* arr, FILE* fp){
     }
     return 0;
 }
+
+#endif

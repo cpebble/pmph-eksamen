@@ -45,40 +45,36 @@ float seq_dotprodFilt(float* x, float* y, float* vec, int n){
         if (!isnan(vec[i]))
             sum += x[i] * y[i];
     }
+    return 0.0f;
 }
 float seq_dotprod(float* x, float* y, int n){
     float sum = 0.0f;
     for(int i = 0; i < n; i++){
         sum += x[i] * y[i];
     }
+    return sum;
 }
 
 // --- Filtered Matrix - Matrix Multiplication ---
 // Should multiply X*X^t and filter out the rows, where y is NAN
 // X is a KxN matrix
 // X_t is a NxK matrix
-// y is a vector of size N 
-// Output is KxK matrix
-void seq_mmMulFilt(float* X, float* X_t, float* y, float* X_sqr, int n, int p, int m){
-    // So we can use seq_dotprod
-    //float* X_t_t = (float*)malloc(p*m*sizeof(float));
-    //seq_transpose(X_t, X_t_t, p, m)
-    //for(int i = 0; i < n; i++){
-        //float* xs = &X[i*n]; // Get start of X
-        //for(int j = 0; j < m; j++){
-//
-        //}
-    //}
-//
-    //free(X_t_t);
-    for(int i = 0; i < n; i++){
-        for(int j = 0; j < m; j++){
-            float accum = 0.0f;
-            for(int j_ = 0; j_ < p; j_++){
-//                if (! isnan(y[j_])) // Filter this out
-                    accum += X[i*n + j_] * X_t[j_*m+j];
+// y is a matrix of size m*N
+// Output is mxKxK matrix
+void seq_mmMulFilt(float* X, float* X_t, float* y,
+        float* M, int pixels, int n, int p, int m){
+    for(int pix = 0; pix < pixels; pix++){
+        for(int i = 0; i < n; i++){
+            for (int j = 0; j < m; j++){
+                float accum = 0.0f;
+                for (int k = 0; k < p; k++){
+                    float a = X[I2(i,k,p)];
+                    float b = X_t[I2(k,j,m)];
+                    if (!isnan(y[I2(pix, k, p)]))
+                        accum += a*b;
+                }
+                M[I3(pix, i, j, n, m)] = accum;
             }
-            X_sqr[i*m + j] = accum;
         }
     }
 }
@@ -86,67 +82,57 @@ void seq_mmMulFilt(float* X, float* X_t, float* y, float* X_sqr, int n, int p, i
 
 // --- Invert a matrix --- 
 // Allocate the [K][2K] array in here
-// X_sqr is a KxK matrix 
-// X_inv is the output and also a KxK matrix
-void seq_matInv (float* X_sqr, float* X_inv, int K){
-      /*  float t1, t2; 
-
-    //skal inverte X_sqr, der er en kxk matrise 
-    //først laver vi en unit-matrix af samme størrelse som X_sqr 
-
-    // Creates a matrix containing both X_sqr and a KxK identity matrix
-    float A[K][2*K]; 
-    for (int i = 0; i < K; i++)
-    {
-        for (int j = 0; i < K; i++)
-        {
-            // X_sqr will be placed at the left side of A
-            if(j < K){
-                int index_Xsqr = i*K + j; 
-                A[i][j] = X_sqr[index_Xsqr]; 
-            }// The identity matrix will be placed to the rigth side of A
-            else{
-                if(i == j){
-                    A[i][j] = 1.0; 
-                }else{
-                    A[i][j] = 0.0; 
-                }
+// X_sqr is a mxKxK matrix 
+// A is the output and also a mxKxK matrix. 768b, 192 floats
+void seq_matInv (float* X_sqr, float* A, int matrices, int height){
+    int width = 2*height;
+    // And will be shared in the grid blocks
+    // 384 float
+    float* Ash = (float*)malloc(height*width*sizeof(float));// This will be array we gauss-jordan
+    for(int i = 0; i < matrices; i++){
+        for(int k1 = 0; k1 < height; k1++){
+            for(int k2 = 0; k2 < width; k2++){
+                // Fill up the tmp array
+                //Ash[I2(k1, k2, width)] = 0.0f;
+                int ind = I2(k1, k2, width);
+                int ind3= I3(i, k1, k2, height, height);
+                Ash[ind] = (k2 < height) ?
+                    X_sqr[ind3] : 
+                    (k2 == height + k1);
             }
-        }        
-    }
-    // Now we Gauss Jordan is performed 
-    for (int i = 0; i < K; i++)
-    {
-        t1 = A[i][i]; 
-        for (int j = 0; j < K; j++)
-        {
-            A[i][j] = A[i][j]/t1; 
-            A[i][j+K] = A[i][j+K]/t1; 
         }
-        for(int p = 0; p < K; p++){
-            t2 = A[p][i]; 
-            for(int j = 0; j < K; j++){
-                if(p == i){
-                    break;
-                }else{
-                    A[p][j] = A[p][j] - A[i][j]*t2; 
-                    A[p][j+K] = A[p][j+K] - A[i][j+K]*t2; 
+        printf("Filled Ash %d times, which is less than %d\n",i, matrices);
+        for(int i_=0;i_<height;i_++)
+        {
+            float curEl = Ash[I2(i_, i_, width)];
+            if(Ash[I2(i_,i_,width)] == 0.0)
+            {
+                printf("Mathematical Error!");
+                continue;
+            }
+            for(int j=0;j<height;j++)
+            {
+                if(i_!=j)
+                {
+                     float ratio = Ash[I2(j,i_,width)]/Ash[I2(i_,i_,width)];
+                     for(int k=0;k<width;k++)
+                     {
+                         Ash[I2(j,k,width)] = Ash[I2(j,k,width)] - ratio*Ash[I2(i_,k,width)];
+                     }
                 }
             }
-        }    
+            for(int c = 0; c < width; c++){
+                Ash[I2(i_, c, width)] /= curEl;
+            }
+            printf("More %f\n", curEl);
+            print3dMatrix(Ash, 1, height, 16);
+        }
+        for(int k1 = 0; k1 < height; k1++){
+            for(int k2 = 0; k2 < height; k2++){
+                A[I3(i, k1, k2, height, height)] = Ash[I2(k1, height+k2, width)];
+            }
+        }
     }
-    // Now we copy the elements from A to X_inv
-    for (int i = 0; i < K; i++)
-    {
-        for (int j = 0; i < K; i++)
-        {
-            int index_Xinv = i*K+ j; 
-            X_inv[index_Xinv] = A[i][j]; 
-        }          
-    }*/
-     
-    
-    
 }
 
 // --- Filtered Matrix * Vector multiplication ---
