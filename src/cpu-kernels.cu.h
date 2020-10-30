@@ -3,6 +3,33 @@
 #define _CPU_KERNELS
 #include <math.h>
 
+// HELPERS
+void seq_transpose(float* X_in, float* X_out, int rows, int cols){
+    for (int r = 0; r < rows; r++){
+        for (int c = 0; c < cols; c++){
+            // X_out[c][r] = X_in[r][c]
+            X_out[c * rows + r] = X_in[r*cols + c];
+        }
+    }
+}
+// This is hardcoded to use the predicate "isnan", because we don't really need it for
+// anything else
+// Returns number of valid values
+int seq_filterPadWithKeys(float* arr, float* Rs, float* Ks, int n){
+    int c = 0;
+    for(int i = 0; i < n; i++){
+        if (!isnan(arr[i])){
+            Rs[c] = arr[i];
+            Ks[c] = i;
+            c++;
+        }
+    }
+    for(int i = c; i < n; i++){
+        Rs[i] = NAN;
+        Ks[i] = 0;
+    }
+    return c;
+}
 //--- Creates the interpolation matrix ---
 // K is the number of rows
 // N is the number of columns 
@@ -210,17 +237,25 @@ void seq_mvMul2(float* X, float* y, float* y_out, int pixels, int height, int wi
 }
 
 // --- Calculates Y - Y_pred --- 
-// Y is the real targets, which has size N
-// Ypred is the predictions, which has size N
-// Out will be R, which is the error
-void seq_YErrorCalculation(float* Y, float* Ypred, float* R, int N, int M){
-      /*  for(int i = 0; i < M; i++){
-        for (int j = 0; j < N; j++)
-        {
-            int index = i*M + j; 
-            R[index] = Ypred[index] - Y[index]; 
-        }    
-    }*/
+// Y is a mxN
+// y_preds is mxN
+// R is mxN
+// K is mxN
+// Nss is m vector
+void seq_YErrorCalculation(float* Y, float* Ypred, float* R, float* K, int* Ns, int m, int N){
+    float y_err_tmp[N];
+    // For all pixels
+    for(int pix = 0; pix < m; pix++){
+        // Calculate y - ypred 
+        for(int i = 0; i < N; i++){
+            float ye = Y[I2(pix, i, N)];
+            float yep = Ypred[I2(pix, i, N)];
+            y_err_tmp[i] = (isnan(ye)) ? ye : (ye - yep);
+        }
+        // and put in a padded array
+        int n = seq_filterPadWithKeys(y_err_tmp, &R[I2(pix, 0, N)], &K[I2(pix, 0, N)], N);
+        Ns[pix] = n;
+    }
 }
 
 
@@ -228,11 +263,34 @@ void seq_YErrorCalculation(float* Y, float* Ypred, float* R, int N, int M){
 
 // --- Kernel 6 ---
 // Creates the lists hs, nss and sigmas, whih will be used in later calculatations
-// Y_historic is an matrix containing, where each row is a time-serie for a pixel 
-// n is the number of rows in Y_historic - which is the number of pixels
-// m is the number of cols in Y_historic  
+// yh       is mxn
+// y_errors is mxN
+// out:
+// sigmas: 1xM
+// hs    : 1xM
+// ns    : 1xM
 void seq_NSSigma(float* Y_errors, float* Y_historic, 
-         float* sigmas, int* hs, float* nss, int n, int m, int k, float hfrac){
+         float* sigmas, int* hs, float* nss, int N, int n, int m, int k, float hfrac){
+    for(int pix = 0; pix < m; pix++){
+        // yh   = Yh[pix*n]
+        // Yerr = Yerror[pix*N]
+        int ns = 0;
+        for(int i = 0; i < n; i++){
+            if (!isnan(Y_historic[I2(pix, i, n)])) ns++;
+        }
+        float sigma = 0.0f;
+        for(int i = 0; i < ns; i++){
+            float tmp = Y_errors[I2(pix, i, N)];
+            sigma += tmp*tmp;
+        }
+        sigma = sqrtf(sigma / ((float)(ns - k)));
+        float h = (int) (((float)ns) * hfrac);
+        sigmas[pix] = sigma;
+        nss[pix]    = ns;
+        hs[pix]     = h;
+        printf("AAAAAAARHGS: %f, %f, %d\n", sigma, ns, h);
+        
+    }
 }
 
 // --- Kernel 7 ---
@@ -254,15 +312,6 @@ void seq_mosum(
 
 }
 
-// HELPERS
-void seq_transpose(float* X_in, float* X_out, int rows, int cols){
-    for (int r = 0; r < rows; r++){
-        for (int c = 0; c < cols; c++){
-            // X_out[c][r] = X_in[r][c]
-            X_out[c * rows + r] = X_in[r*cols + c];
-        }
-    }
-}
 
 #endif
 

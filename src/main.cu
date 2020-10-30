@@ -160,26 +160,28 @@ int validate(dataset* ds){
     float* Xt_host = (float*) malloc(k2p2_ * ds->N * sizeof(float));
     seq_transpose(X_host, Xt_host, k2p2_, ds->N);
     seq_mvMulFilt(Xt_host, beta_host, y_preds_host, ds->m, ds->N, k2p2_);
-
-    printMatrix(y_preds_host, ds->m, ds->N);
-
     printf("[!]K4 Done\n");
-    return 0; /*
+
     // Kernel 5
     printf("Calculating Y_errors\n");
     float* r_host = (float*) malloc(ds->m * ds->N * sizeof(float));
-    seq_YErrorCalculation(ds->images, ypreds_host, r_host, ds->m, ds->N);
-    printf("[!]K5 Done\n");
+    float* k_host = (float*) malloc(ds->m * ds->N * sizeof(float));
+    int* Ns_host = (int*) malloc(ds->m*sizeof(int));
+    seq_YErrorCalculation(ds->images, y_preds_host, r_host, k_host, Ns_host, ds->m, ds->N);
     
     // Kernel 6
     printf("Calculating Sigmas\n");
     float* sigmas_host = (float*) malloc(ds->m * sizeof(float));
     float* ns_host     = (float*) malloc(ds->m * sizeof(float));
     int* hs_host     = (int*) malloc(ds->m * sizeof(float));
-    seq_NSSigma(r_host, Yh_host, sigmas_host, hs_host, ns_host, ds->N, ds->m, k2p2_, ds->hfrac);
+    seq_NSSigma(r_host, Yh_host, sigmas_host, hs_host, ns_host, ds->N, ds->n, ds->m, k2p2_, ds->hfrac);
+    printf("["); for(int i = 0; i < ds->m; i++) printf("%d, ", hs_host[i]); printf("]\n");
+    printf("["); for(int i = 0; i < ds->m; i++) printf("%f, ", ns_host[i]); printf("]\n");
+    printf("["); for(int i = 0; i < ds->m; i++) printf("%f, ", sigmas_host[i]); printf("]\n");
     printf("Sigmas calculated\n");
     printf("[!]K6 Done\n");
 
+    return 0; /*
     // Kernel 7
     printf("Calculating hmax: ");
     int hmax = -100000;
