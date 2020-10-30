@@ -270,7 +270,7 @@ void seq_YErrorCalculation(float* Y, float* Ypred, float* R, float* K, int* Ns, 
 // hs    : 1xM
 // ns    : 1xM
 void seq_NSSigma(float* Y_errors, float* Y_historic, 
-         float* sigmas, int* hs, float* nss, int N, int n, int m, int k, float hfrac){
+         float* sigmas, int* hs, int* nss, int N, int n, int m, int k, float hfrac){
     for(int pix = 0; pix < m; pix++){
         // yh   = Yh[pix*n]
         // Yerr = Yerror[pix*N]
@@ -288,20 +288,25 @@ void seq_NSSigma(float* Y_errors, float* Y_historic,
         sigmas[pix] = sigma;
         nss[pix]    = ns;
         hs[pix]     = h;
-        printf("AAAAAAARHGS: %f, %f, %d\n", sigma, ns, h);
         
     }
 }
 
 // --- Kernel 7 ---
 // 
-void seq_msFst(int hMax, float* Y_error, int* hss, float* nss, float* msFst, float* bounds, int N, int n){
-
-    //looper hen over rækkerne i de tre matriser, Y_errors, nss og hss 
-
-    //looper hen over hvert element i hver række for de tre matriser
-    // for hver af de tre elementer 
-
+// Map
+// y_errs   = mxN
+// nss      = 1xm
+// hs       = 1xm
+void seq_msFst(float* y_error, int* ns, int* hs, float* MO_fsts, int m, int N, int hMax){
+    for(int pix = 0; pix < m; pix++){
+        float sum = 0;
+        for(int i = 0; i < hMax; i++){
+            if (i < hs[pix])
+                sum += y_error[I2(pix, i+ns[pix]-hs[pix]+1, N)];
+        }
+        MO_fsts[pix] = sum;
+    }
 }
 
 void seq_mosum(

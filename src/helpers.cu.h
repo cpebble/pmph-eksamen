@@ -6,8 +6,10 @@
 #define I3(z,y,x,h,w) (h*w*z+w*y+x)
 
 // Will include helper scripts for time values, validations, etc
-int i2(int r,int c,int w){
-    return (r*w+c);
+float logplus(float x){
+    if (x > expf(1) )
+        return logf(x);
+    return 1;
 }
 int timeval_subtract(struct timeval *result, struct timeval *t2, struct timeval *t1)
 {

@@ -172,16 +172,12 @@ int validate(dataset* ds){
     // Kernel 6
     printf("Calculating Sigmas\n");
     float* sigmas_host = (float*) malloc(ds->m * sizeof(float));
-    float* ns_host     = (float*) malloc(ds->m * sizeof(float));
-    int* hs_host     = (int*) malloc(ds->m * sizeof(float));
+    int* ns_host     = (int*) malloc(ds->m * sizeof(int));
+    int* hs_host     = (int*) malloc(ds->m * sizeof(int));
     seq_NSSigma(r_host, Yh_host, sigmas_host, hs_host, ns_host, ds->N, ds->n, ds->m, k2p2_, ds->hfrac);
-    printf("["); for(int i = 0; i < ds->m; i++) printf("%d, ", hs_host[i]); printf("]\n");
-    printf("["); for(int i = 0; i < ds->m; i++) printf("%f, ", ns_host[i]); printf("]\n");
-    printf("["); for(int i = 0; i < ds->m; i++) printf("%f, ", sigmas_host[i]); printf("]\n");
     printf("Sigmas calculated\n");
     printf("[!]K6 Done\n");
 
-    return 0; /*
     // Kernel 7
     printf("Calculating hmax: ");
     int hmax = -100000;
@@ -192,10 +188,20 @@ int validate(dataset* ds){
     printf("%d\n", hmax);
     float* MOfst_host = (float*) malloc(ds->m * sizeof(float*));
     float* BOUND_host = (float*) malloc((ds->N - ds->n)*sizeof(float));
-    seq_msFst(hmax, r_host, hs_host, ns_host, MOfst_host, BOUND_host, ds->N, ds->n);
-    printf("Calculated MO_fsts and Bounds\n");
-    printf("[!]K7 Done\n");
+    printf("Calculated MO_fsts\n");
+    seq_msFst(r_host, ns_host, hs_host, MOfst_host, ds->m, ds->N, hmax);
+    printf("Calculating BOUND\n");
+    for(int q = 0; q < ds->N - ds->n; q++){
+        int t    = ds->n+q;
+        int time = ds->mappingIndices[t];
+        float tmp = logplus( ((float)time) / ((float) ds->mappingIndices[ds->N-1]));
+        BOUND_host[q] = ds->lam * (sqrtf(tmp));
+    }
 
+    printf("[!]K7 Done\n");
+    
+
+    return 0; /*
     float* breaks_host = (float*) malloc(ds->m * sizeof(float*));
     float* means_host  = (float*) malloc(ds->m * sizeof(float*));
     
