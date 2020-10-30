@@ -23,7 +23,7 @@ int testme(int n){
 void printMatrix(float* mat, int rows, int cols){
     printf("[");
     for (int r = 0; r < rows; r++){
-        printf("[");
+        printf("\n\t[");
         for(int c = 0; c < cols; c++){
             printf("%.3f, ", mat[cols*r + c]);
         }

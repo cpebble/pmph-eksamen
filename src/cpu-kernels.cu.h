@@ -78,6 +78,28 @@ void seq_mmMulFilt(float* X, float* X_t, float* y,
         }
     }
 }
+// --- Matrix - Matrix Multiplication ---
+// Should multiply X*X^t and filter out the rows, where y is NAN
+// X is a KxN matrix
+// X_t is a NxK matrix
+// y is a matrix of size m*N
+// Output is mxKxK matrix
+void seq_mmMul(float* X, float* X_t, float* y,
+        float* M, int pixels, int n, int p, int m){
+    for(int pix = 0; pix < pixels; pix++){
+        for(int i = 0; i < n; i++){
+            for (int j = 0; j < m; j++){
+                float accum = 0.0f;
+                for (int k = 0; k < p; k++){
+                    float a = X[I2(i,k,p)];
+                    float b = X_t[I2(k,j,m)];
+                    accum += a*b;
+                }
+                M[I3(pix, i, j, n, m)] = accum;
+            }
+        }
+    }
+}
 
 
 // --- Invert a matrix --- 
@@ -107,7 +129,6 @@ void seq_matInv (float* X_sqr, float* A, int matrices, int height){
             float curEl = Ash[I2(i_, i_, width)];
             if(Ash[I2(i_,i_,width)] == 0.0)
             {
-                printf("Mathematical Error!");
                 continue;
             }
             for(int j=0;j<height;j++)
@@ -124,8 +145,6 @@ void seq_matInv (float* X_sqr, float* A, int matrices, int height){
             for(int c = 0; c < width; c++){
                 Ash[I2(i_, c, width)] /= curEl;
             }
-            printf("More %f\n", curEl);
-            print3dMatrix(Ash, 1, height, 16);
         }
         for(int k1 = 0; k1 < height; k1++){
             for(int k2 = 0; k2 < height; k2++){
@@ -137,39 +156,57 @@ void seq_matInv (float* X_sqr, float* A, int matrices, int height){
 
 // --- Filtered Matrix * Vector multiplication ---
 // Calculate X*y
-// X is assumed to a KxN matrix
-// Y is also supposed to be a vector of size Nx1
-// Output is y_out and will be vector of size Nx1
-void seq_mvMulFilt(float* X, float* y, float* y_out, int K, int N){ 
-      /*  for (int i = 0; i < K; i++)
-    {
-         y_out[i] = 0; 
-         for (int j = 0; j < N; j++)
-         {
-             int index_X = i*K + j; 
-             y_out[i] += X[index_X] * y[j]; 
-         }
-        
-    }    */    
+// X is assumed to a PxKxN matrix
+// Y is al
+// Output is y_out and will be vector of size MxK
+void seq_mvMulFilt(float* X, float* y, float* y_out, int pixels, int height, int width){ 
+    for(int pix = 0; pix < pixels; pix++){
+        for(int i = 0; i < height; i++){
+            float accum = 0.0f;
+            for (int k = 0; k < width; k++){
+                float a = X[I2(i,k,width)];
+                float b = y[I2(pix,k,width)];
+                if (!isnan(b))
+                    accum += a*b;
+            }
+            y_out[I2(pix, i, height)] = accum;
+        }
+    }
 }
 
 
 // --- UnFiltered matrix * vector multiplication - calculates the prediction --- 
 // Used for calculating Beta, and y_preds
-// X_sqr is an KxK matrix
-// y is an vector of size Kx1
-// Ouput will be B_out, which an Kx1 vector
-void seq_mvMul(float* X_sqr, float* y, float* B_out, int K, int N){
-    //her skal vi gange X_sqr, så vi får en vector med størrelsen K
-     /*   for (int i = 0; i < K; i++)
-    {
-        B_out[i] = 0; 
-        for (int j = 0; j < K; j++)
-        {
-            int index_Xsqr = i*K +j; 
-            B_out[i] += X_sqr[index_Xsqr] * y[j]; 
-        }        
-    }*/
+// X is an mxKxK matrix
+// y is an vector of size mxK
+// Ouput will be y_out, which an mxK vector
+void seq_mvMul(float* X, float* y, float* y_out, int pixels, int height, int width){ 
+    for(int pix = 0; pix < pixels; pix++){
+        for(int i = 0; i < height; i++){
+            float accum = 0.0f;
+            for (int k = 0; k < width; k++){
+                float a = X[I3(pix,i,k,width, width)];
+                float b = y[I2(pix,k,width)];
+                accum += a*b;
+            }
+            y_out[I2(pix, i, height)] = accum;
+        }
+    }
+}
+// Another mvMul
+void seq_mvMul2(float* X, float* y, float* y_out, int pixels, int height, int width){ 
+    for(int pix = 0; pix < pixels; pix++){
+        for(int t = 0; t < height; t++){
+            float accum = 0.0f;
+            for(int i = 0; i < height; i++){
+                float a = X[I2(pix, i, height)];
+                float b = y[I2(pix, i, height)];
+                accum += a*b;
+            }
+
+            y_out[I2(pix, t, width )] = accum;
+        }
+    }
 }
 
 // --- Calculates Y - Y_pred --- 
