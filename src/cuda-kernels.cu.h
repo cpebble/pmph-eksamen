@@ -4,6 +4,8 @@
 
 __global__ void parralel(int n, int* N){
     N[0] = n;
+    p = np;
+    // qed
 }
 
 #endif

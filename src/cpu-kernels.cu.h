@@ -15,7 +15,7 @@ void seq_transpose(float* X_in, float* X_out, int rows, int cols){
 // This is hardcoded to use the predicate "isnan", because we don't really need it for
 // anything else
 // Returns number of valid values
-int seq_filterPadWithKeys(float* arr, float* Rs, float* Ks, int n){
+int seq_filterPadWithKeys(float* arr, float* Rs, int* Ks, int n){
     int c = 0;
     for(int i = 0; i < n; i++){
         if (!isnan(arr[i])){
@@ -150,7 +150,7 @@ void seq_matInv (float* X_sqr, float* A, int matrices, int height){
                     (k2 == height + k1);
             }
         }
-        printf("Filled Ash %d times, which is less than %d\n",i, matrices);
+        //printf("Filled Ash %d times, which is less than %d\n",i, matrices);
         for(int i_=0;i_<height;i_++)
         {
             float curEl = Ash[I2(i_, i_, width)];
@@ -236,13 +236,13 @@ void seq_mvMul2(float* X, float* y, float* y_out, int pixels, int height, int wi
     }
 }
 
-// --- Calculates Y - Y_pred --- 
+// --- K5 Calculates Y - Y_pred --- 
 // Y is a mxN
 // y_preds is mxN
 // R is mxN
 // K is mxN
 // Nss is m vector
-void seq_YErrorCalculation(float* Y, float* Ypred, float* R, float* K, int* Ns, int m, int N){
+void seq_YErrorCalculation(float* Y, float* Ypred, float* R, int* K, int* Ns, int m, int N){
     float y_err_tmp[N];
     // For all pixels
     for(int pix = 0; pix < m; pix++){
@@ -309,12 +309,47 @@ void seq_msFst(float* y_error, int* ns, int* hs, float* MO_fsts, int m, int N, i
     }
 }
 
-void seq_mosum(
-    float* Nss, float* nss, float* sigmas, float* hs,
-    float* msFsts, float* Y_error, float* val_inds, 
-    float* breaks, float* means
-    ){
-
+// Ns          = mx1
+// nss         = mx1
+// sigmas      = mx1
+// hs          = mx1
+// MO_fsts     = mx1
+// y_errors    = mxN
+// val_inds(k) = mxN
+// BOUND       = 1x(N-n)
+void seq_mosum(int* Nss, int* nss, float* sigmas, int* hs, float* MO_fsts, float* y_errors,
+        int* val_inds, float* BOUND, int N, int n, int m){
+    for(int pix = 0; pix < m; pix++){
+        // Calculates Moving sums
+        float mo[N-n];
+        for(int j = 0; j < N-n; j++){
+            if (j >= Nss[pix]-nss[pix]){
+                mo[j] = mo[j-1];
+            }
+            else if(j == 0){
+                mo[j] = MO_fsts[pix];
+            } else{
+                // This eliminates the scan. We can't do this in parallel though
+                mo[j] = mo[j-1] + (-y_errors[I2(pix, nss[pix]-hs[pix]+j, N)] + 
+                        y_errors[I2(pix, nss[pix]+j, N)]);
+            }
+        }
+        // Get'in siggy with it
+        for(int j = 0; j < N - n; j++){
+            mo[j] = mo[j] / (sigmas[pix] * (sqrtf((float)nss[pix])));
+        }
+        // Find the first break
+        int fbreak = -1;
+        for(int j = 0; j < N - n; j++){
+            if (j < (Nss[pix] - nss[pix]) && !(isnan(mo[j]))){
+                if (fabs(mo[j]) > BOUND[j]){
+                    fbreak = val_inds[j];
+                    break;
+                }
+                    
+            }
+        }
+    }
 }
 
 

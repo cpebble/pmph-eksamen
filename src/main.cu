@@ -127,7 +127,7 @@ int validate(dataset* ds){
 
     // KERNEL 2
     printf("Creating Xsqr\n");
-    float* Xsqr_host = (float*) malloc(ds->n * k2p2_ * k2p2_ * sizeof(float));
+    float* Xsqr_host = (float*) malloc(ds->m * k2p2_ * k2p2_ * sizeof(float));
     seq_mmMulFilt(Xh_host, Xth_host, Yh_host, Xsqr_host, ds->m, k2p2_, ds->n, k2p2_ );
     printf("[!]K2 Done\n");
     // KERNEL 3
@@ -146,7 +146,7 @@ int validate(dataset* ds){
     seq_mvMulFilt(Xh_host, Yh_host, beta0_host, ds->m, k2p2_, ds->n);
 
     printf("Unfiltered beta and y_preds\n");
-    float* beta_host = (float*) malloc(ds->m * k2p2_);
+    float* beta_host = (float*) malloc(ds->m * k2p2_*sizeof(float));
     // Xinv is a mxKxK matrix
     // Bea0 is a mxK matrix
     // Output is a mxK matrix
@@ -165,7 +165,7 @@ int validate(dataset* ds){
     // Kernel 5
     printf("Calculating Y_errors\n");
     float* r_host = (float*) malloc(ds->m * ds->N * sizeof(float));
-    float* k_host = (float*) malloc(ds->m * ds->N * sizeof(float));
+    int* k_host = (int*) malloc(ds->m * ds->N * sizeof(int));
     int* Ns_host = (int*) malloc(ds->m*sizeof(int));
     seq_YErrorCalculation(ds->images, y_preds_host, r_host, k_host, Ns_host, ds->m, ds->N);
     
@@ -201,58 +201,27 @@ int validate(dataset* ds){
     printf("[!]K7 Done\n");
     
 
-    return 0; /*
     float* breaks_host = (float*) malloc(ds->m * sizeof(float*));
     float* means_host  = (float*) malloc(ds->m * sizeof(float*));
     
     // Moving sums
-    for(int pixel = 0; pixel < ds->m; pixel++){
-        float* _pixel = ds->images + (pixel*ds->m);
-        float* MO = (float*) malloc((ds->N - ds->n) * sizeof(float));
-        // Calculate SUM^t_
-        float sigSqrN = sigmas_host[pixel] * sqrtf(ns_host[pixel]);
-        for(int i = 0; i < ds->N - ds->n; i++){
-            if (i == 0){ // Put in mo_fst
-                MO[i] = MOfst_host[pixel];
-            }
-            // I'm not sure this needs to be there, since we allow nan in MO
-            //if(isnan(_pixel[i]))
-                //MO[i] = MO[i-1]; // If Nan, assume no forest cut down in the meantime
-                //continue;
-            int h = hs_host[pixel];
-            // r[n + t] - r[n + t - h]
-            float tmp = (r_host[pixel*ds->m + ds->n + i] - r_host[pixel*ds->m + (ds->n + i - h)]);
-            MO[i] = tmp / sigSqrN;
+    seq_mosum(Ns_host, ns_host, sigmas_host, hs_host, MOfst_host, r_host, k_host, BOUND_host,
+            ds->N, ds->n, ds->m);
 
-        }
-        // Now MO is calculated
-        int firstBreak = -1;
-        for (int j = 0; j < ds->N - ds->n; j++){
-            float b = BOUND_host[j];
-            float mo= MO[j];
-            if (!isnan(mo)){
-                if (fabsf(mo) > b){
-                    firstBreak = j;
-                    break;
-                }
-            }
-        }
-        breaks_host[pixel] = firstBreak;
-    }
-
+    printMatrix(breaks_host, 1, 3);
     // Free everything!!!
     // TODO:
     //free(X_host);
     //free(Xh_host);
     return 0;
-    */
+    
     
 }
 
 
 int main(int argc, char* argv[]){
     dataset* ds = (dataset*) malloc(sizeof(dataset));
-    char* dsPath = "data/tiny_peru.clean";
+    char* dsPath = "data/peru.clean";
     readDataset(dsPath, ds);
     printf("Ready to work on dataset of %d images, with %d pixels each\n", ds->N, 
             ds->m);
