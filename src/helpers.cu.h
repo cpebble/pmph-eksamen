@@ -111,8 +111,8 @@ int validateMatrices(float* matA, float* matB, int mats, int rows, int cols, flo
                 float tmpA = matA[I3(m,r,c,rows,cols)];
                 float tmpB = matB[I3(m,r,c,rows,cols)];
                 if(fabs(tmpA - tmpB) > eps){
-                    printf("You dun goofed @ %d, %d, %d, expected: %f, got: %f\n",
-                            m,c,r,matA[I3(m,c,r,rows,cols)], matB[I3(m,c,r,rows,cols)]
+                    printf("You dun goofed @ %d, %d, %d, expected: %f, got: %f, eps is: %f\n",
+                            m,c,r, tmpA, tmpB, eps
                           );
                     return 1;
                 }

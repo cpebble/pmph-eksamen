@@ -100,12 +100,14 @@ int validate(dataset* ds){
     // Make interpolation matrix
     printf("Creating X matrix\n");
     int k2p2 = 2*ds->k + 2;
-    int k2p2_ = (ds->trend > 0) ? k2p2 : k2p2-1;
+    const int k2p2_ = (ds->trend > 0) ? k2p2 : k2p2-1;
     float* X_host = (float*) malloc(k2p2_ * ds->N * sizeof(float));
-    // Get mappingIndices to the GPU
+    // Get mappingIndices and images to the GPU
     int* MI_dev; cudaMalloc((void**)&MI_dev, ds->N * sizeof(int));
+    float* images_dev; cudaMalloc((void**)&images_dev, ds->m * ds->N * sizeof(float));
     cudaMemcpy(MI_dev, ds->mappingIndices, ds->N*sizeof(int), cudaMemcpyHostToDevice);
-
+    cudaMemcpy(images_dev, ds->images, ds->m * ds->N*sizeof(int), cudaMemcpyHostToDevice);
+    cudaDeviceSynchronize();
     // Perform sequential validation run
     seq_mkX(k2p2_, ds->N, ds->freq, ds->mappingIndices, X_host);
 
@@ -113,15 +115,17 @@ int validate(dataset* ds){
     float* X_dev; cudaMalloc((void**)&X_dev, k2p2_*ds->N*sizeof(float));
     // Threads per block(kind of arbitrary for the naive version)
     {
-        dim3 threadsPerBlock(1, 1);
-        dim3 numBlocks(ds->N / threadsPerBlock.x, k2p2_ / threadsPerBlock.y);
+        dim3 threadsPerBlock(8, 8);
+        dim3 numBlocks((ds->N / threadsPerBlock.x) + 1, (k2p2_ / threadsPerBlock.y));
         gpu_mkX<<<numBlocks, threadsPerBlock>>>(k2p2_, ds->N, ds->freq, MI_dev, X_dev);
         
         
     }
+    //cudaDeviceSynchronize();
     float* X_dev_v = (float*)malloc(k2p2_*ds->N*sizeof(float));
     cudaMemcpy(X_dev_v, X_dev, k2p2_*ds->N*sizeof(float), cudaMemcpyDeviceToHost);
     validateMatrices(X_host, X_dev_v, 1, k2p2_, ds->N, 0.001f);
+    free(X_dev_v);
 
     printf("Transposing matrices and extracting Historical data\n");
     // Host mem
@@ -145,8 +149,48 @@ int validate(dataset* ds){
             Yh_host[j*ds->n + i] = ds->images[j*ds->N + i];
         }
     }
+    // And gpu slicing
+    {
+        dim3 threadsPerBlock(1,1);
+        dim3 numBlocks((ds->n / threadsPerBlock.x) + 1, (k2p2_ / threadsPerBlock.y) + 1);
+        sliceMatrix<<<numBlocks, threadsPerBlock>>>(X_dev, Xh_dev, k2p2_, ds->n, ds->N);
+        dim3 y_numBlocks((ds->n / threadsPerBlock.x) + 1, (ds->m / threadsPerBlock.y) + 1);
+        printf("%d\n", y_numBlocks.y);
+        sliceMatrix<<<y_numBlocks, threadsPerBlock>>>(images_dev, Yh_dev, ds->m, ds->n, ds->N);
+    }
+    printf("Validating Xh\n");
+    float* Xh_dev_v = (float*)malloc(k2p2_*ds->n*sizeof(float));
+    cudaMemcpy(Xh_dev_v, Xh_dev, k2p2_*ds->n*sizeof(float), cudaMemcpyDeviceToHost);
+    validateMatrices(Xh_host, Xh_dev_v, 1, k2p2_, ds->n, 0.001f);
+    free(Xh_dev_v);
+    printf("Validating Yh\n");
+    float* Yh_dev_v = (float*)malloc(ds->m*ds->n*sizeof(float));
+    cudaMemcpy(Yh_dev_v, Yh_dev, ds->m*ds->n*sizeof(float), cudaMemcpyDeviceToHost);
+    validateMatrices(Yh_host, Yh_dev_v, 1, ds->m, ds->n, 0.001f);
+    free(Yh_dev_v);
     // Transpose X
+    printf("Transposing now:\n");
     seq_transpose(Xh_host, Xth_host, k2p2_, ds->n);
+    
+    {
+        const int T = 32; int height = k2p2_; int width = ds->n;
+        // 1. setup block and grid parameters
+        unsigned int sh_mem_size = T * (T+1) * sizeof(float); 
+        int  dimy = (height+T-1) / T; 
+        int  dimx = (width +T-1) / T;
+        dim3 block(T, T, 1);
+        dim3 grid (dimx, dimy, 1);
+
+        matTransposeTiledKer<T><<<grid, block, sh_mem_size>>>
+            (Xh_dev, Xth_dev, height, width);
+        cudaDeviceSynchronize();
+        
+    }
+    printf("Validating Xth\n");
+    float* Xth_dev_v = (float*)malloc(ds->n * k2p2_ * sizeof(float));
+    cudaMemcpy(Xth_dev_v, Xth_dev, ds->n * k2p2_ * sizeof(float), cudaMemcpyDeviceToHost);
+    validateMatrices(Xth_host, Xth_dev_v, 1, ds->n, k2p2_, 0.001f);
+    free(Xth_dev_v);
     printf("[!]K1 done\n");
 
     // KERNEL 2
@@ -157,12 +201,37 @@ int validate(dataset* ds){
     float* Xsqr_dev; cudaMalloc((void**)&Xsqr_dev, ds->m * k2p2_ * k2p2_ * sizeof(float));
 
     seq_mmMulFilt(Xh_host, Xth_host, Yh_host, Xsqr_host, ds->m, k2p2_, ds->n, k2p2_ );
+    printf("Testing Xqr_dev\n");
+    {
+        dim3 threadsPerBlock(4, 8, 8);
+        dim3 numBlocks(
+                (k2p2_ / threadsPerBlock.x) + 1,
+                (k2p2_ / threadsPerBlock.y) + 1, 
+                (ds->m / threadsPerBlock.z) + 1
+                );
+        gpu_mmMulFilt_naive<<<numBlocks, threadsPerBlock>>>
+            (Xh_dev, Xth_dev, Yh_dev, Xsqr_dev, ds->m, k2p2_, ds->n, k2p2_ );
+    }
+    //cudaDeviceSynchronize();
+    float* Xsqr_dev_v = (float*)malloc(k2p2_*k2p2_*ds->m*sizeof(float));
+    cudaMemcpy(Xsqr_dev_v, Xsqr_dev, k2p2_*k2p2_*ds->m*sizeof(float), cudaMemcpyDeviceToHost);
+    validateMatrices(Xsqr_host, Xsqr_dev_v, ds->m, k2p2_, k2p2_, 0.01f);
+    free(Xsqr_dev_v);
+
+
     printf("[!]K2 Done\n");
     // KERNEL 3
     printf("Inverting Xsqr\n");
     float* Xinv_host = (float*) malloc(ds->m * k2p2_ * k2p2_ * sizeof(float));
     float* Xinv_dev; cudaMalloc((void**)&Xinv_dev, ds->m * k2p2_ * k2p2_ * sizeof(float));
     seq_matInv(Xsqr_host, Xinv_host, ds->m, k2p2_);
+    printf("GPU Inversion\n");
+    {
+        // Every block handles one inversion. Since k2p2 is less than 23 we have 2*k^2 < 1024
+        dim3 threadsPerBlock(2*k2p2_,k2p2_);
+        dim3 numBlocks(ds->m);
+        gpu_batchMatInv<8><<<numBlocks, threadsPerBlock>>>(Xsqr_dev, ds->m);
+    }
     printf("[!]K3 Done\n");
 
     // Kernel 4
