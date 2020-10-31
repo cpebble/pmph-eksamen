@@ -106,9 +106,11 @@ int readFloatArray(int N, float* arr, FILE* fp){
 }
 int validateMatrices(float* matA, float* matB, int mats, int rows, int cols, float eps){
     for(int m = 0; m < mats; m++){
-        for(int r; r < rows; r++){
-            for(int c; c < cols; c++){
-                if(fabs(matA[I3(m,c,r,rows,cols)] - matB[I3(m,c,r,rows,cols)]) > eps){
+        for(int r = 0; r < rows; r++){
+            for(int c = 0; c < cols; c++){
+                float tmpA = matA[I3(m,r,c,rows,cols)];
+                float tmpB = matB[I3(m,r,c,rows,cols)];
+                if(fabs(tmpA - tmpB) > eps){
                     printf("You dun goofed @ %d, %d, %d, expected: %f, got: %f\n",
                             m,c,r,matA[I3(m,c,r,rows,cols)], matB[I3(m,c,r,rows,cols)]
                           );

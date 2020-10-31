@@ -102,12 +102,36 @@ int validate(dataset* ds){
     int k2p2 = 2*ds->k + 2;
     int k2p2_ = (ds->trend > 0) ? k2p2 : k2p2-1;
     float* X_host = (float*) malloc(k2p2_ * ds->N * sizeof(float));
+    // Get mappingIndices to the GPU
+    int* MI_dev; cudaMalloc((void**)&MI_dev, ds->N * sizeof(int));
+    cudaMemcpy(MI_dev, ds->mappingIndices, ds->N*sizeof(int), cudaMemcpyHostToDevice);
+
+    // Perform sequential validation run
     seq_mkX(k2p2_, ds->N, ds->freq, ds->mappingIndices, X_host);
 
+    // Now CudaMalloc and do the same thing on the GPU
+    float* X_dev; cudaMalloc((void**)&X_dev, k2p2_*ds->N*sizeof(float));
+    // Threads per block(kind of arbitrary for the naive version)
+    {
+        dim3 threadsPerBlock(1, 1);
+        dim3 numBlocks(ds->N / threadsPerBlock.x, k2p2_ / threadsPerBlock.y);
+        gpu_mkX<<<numBlocks, threadsPerBlock>>>(k2p2_, ds->N, ds->freq, MI_dev, X_dev);
+        
+        
+    }
+    float* X_dev_v = (float*)malloc(k2p2_*ds->N*sizeof(float));
+    cudaMemcpy(X_dev_v, X_dev, k2p2_*ds->N*sizeof(float), cudaMemcpyDeviceToHost);
+    validateMatrices(X_host, X_dev_v, 1, k2p2_, ds->N, 0.001f);
+
     printf("Transposing matrices and extracting Historical data\n");
+    // Host mem
     float* Xh_host = (float*) malloc(k2p2_ * ds->n * sizeof(float)); // Kxn
     float* Xth_host= (float*) malloc(k2p2_ * ds->n * sizeof(float)); // nxK
     float* Yh_host = (float*) malloc(ds->m * ds->n * sizeof(float)); // mxn
+    // Cuda mem
+    float* Xh_dev;  cudaMalloc((void**)&Xh_dev,  k2p2_ * ds->n * sizeof(float));
+    float* Xth_dev; cudaMalloc((void**)&Xth_dev, k2p2_ * ds->n * sizeof(float));
+    float* Yh_dev;  cudaMalloc((void**)&Yh_dev, ds->m * ds->n * sizeof(float));
     // Do the list slicing sequentially
     for(int k = 0; k < k2p2_; k++){
         for (int i = 0; i < ds->n; i++){
@@ -127,12 +151,17 @@ int validate(dataset* ds){
 
     // KERNEL 2
     printf("Creating Xsqr\n");
+    // CPU
     float* Xsqr_host = (float*) malloc(ds->m * k2p2_ * k2p2_ * sizeof(float));
+    // Cuda
+    float* Xsqr_dev; cudaMalloc((void**)&Xsqr_dev, ds->m * k2p2_ * k2p2_ * sizeof(float));
+
     seq_mmMulFilt(Xh_host, Xth_host, Yh_host, Xsqr_host, ds->m, k2p2_, ds->n, k2p2_ );
     printf("[!]K2 Done\n");
     // KERNEL 3
     printf("Inverting Xsqr\n");
     float* Xinv_host = (float*) malloc(ds->m * k2p2_ * k2p2_ * sizeof(float));
+    float* Xinv_dev; cudaMalloc((void**)&Xinv_dev, ds->m * k2p2_ * k2p2_ * sizeof(float));
     seq_matInv(Xsqr_host, Xinv_host, ds->m, k2p2_);
     printf("[!]K3 Done\n");
 
@@ -143,10 +172,12 @@ int validate(dataset* ds){
     // Yh  is mxn
     // out is mxk 
     float* beta0_host = (float*) malloc(ds->m * k2p2_ * sizeof(float));
+    float* beta0_dev; cudaMalloc((void**)&beta0_dev, ds->m * k2p2_ * sizeof(float));
     seq_mvMulFilt(Xh_host, Yh_host, beta0_host, ds->m, k2p2_, ds->n);
 
     printf("Unfiltered beta and y_preds\n");
     float* beta_host = (float*) malloc(ds->m * k2p2_*sizeof(float));
+    float* beta_dev; cudaMalloc((void**)&beta_dev, ds->m * k2p2 * sizeof(float));
     // Xinv is a mxKxK matrix
     // Bea0 is a mxK matrix
     // Output is a mxK matrix
@@ -158,22 +189,38 @@ int validate(dataset* ds){
     float* y_preds_host = (float*) malloc(ds->m * ds->N * sizeof(float));
     // Transpose X
     float* Xt_host = (float*) malloc(k2p2_ * ds->N * sizeof(float));
+    // Cuda mem
+    float* y_preds_dev; cudaMalloc((void**)&y_preds_dev, ds->m * ds->N * sizeof(float));
+    float* Xt_dev; cudaMalloc((void**)&Xt_dev, k2p2_ * ds->N * sizeof(float));
+
     seq_transpose(X_host, Xt_host, k2p2_, ds->N);
     seq_mvMulFilt(Xt_host, beta_host, y_preds_host, ds->m, ds->N, k2p2_);
     printf("[!]K4 Done\n");
 
     // Kernel 5
     printf("Calculating Y_errors\n");
+    // CPU
     float* r_host = (float*) malloc(ds->m * ds->N * sizeof(float));
     int* k_host = (int*) malloc(ds->m * ds->N * sizeof(int));
     int* Ns_host = (int*) malloc(ds->m*sizeof(int));
+    // GPU
+    float* r_dev; cudaMalloc((void**)&r_dev, ds->m * ds->N * sizeof(float));
+    int* k_dev; cudaMalloc((void**)&k_dev, ds->m * ds->N * sizeof(int));
+    int* Ns_dev; cudaMalloc((void**)&Ns_dev, ds->m*sizeof(int));
+
     seq_YErrorCalculation(ds->images, y_preds_host, r_host, k_host, Ns_host, ds->m, ds->N);
     
     // Kernel 6
     printf("Calculating Sigmas\n");
+    // CPU Allocations
     float* sigmas_host = (float*) malloc(ds->m * sizeof(float));
     int* ns_host     = (int*) malloc(ds->m * sizeof(int));
     int* hs_host     = (int*) malloc(ds->m * sizeof(int));
+    // GPU Allocations
+    float* sigmas_dev; cudaMalloc((void**)&sigmas_dev, ds->m * sizeof(float));
+    int* ns_dev; cudaMalloc((void**)&ns_dev, ds->m * sizeof(int));
+    int* hs_dev; cudaMalloc((void**)&hs_dev, ds->m * sizeof(int));
+
     seq_NSSigma(r_host, Yh_host, sigmas_host, hs_host, ns_host, ds->N, ds->n, ds->m, k2p2_, ds->hfrac);
     printf("Sigmas calculated\n");
     printf("[!]K6 Done\n");
@@ -188,6 +235,8 @@ int validate(dataset* ds){
     printf("%d\n", hmax);
     float* MOfst_host = (float*) malloc(ds->m * sizeof(float*));
     float* BOUND_host = (float*) malloc((ds->N - ds->n)*sizeof(float));
+    float* MOfst_dev; cudaMalloc((void**)&MOfst_dev, ds->m * sizeof(float*));
+    float* BOUND_dev; cudaMalloc((void**)&BOUND_dev, ds->N - ds->n * sizeof(float*));
     printf("Calculated MO_fsts\n");
     seq_msFst(r_host, ns_host, hs_host, MOfst_host, ds->m, ds->N, hmax);
     printf("Calculating BOUND\n");
@@ -202,7 +251,7 @@ int validate(dataset* ds){
     
 
     float* breaks_host = (float*) malloc(ds->m * sizeof(float*));
-    float* means_host  = (float*) malloc(ds->m * sizeof(float*));
+    float* breaks_dev; cudaMalloc((void**)&breaks_dev, ds->m * sizeof(float*));
     
     // Moving sums
     seq_mosum(Ns_host, ns_host, sigmas_host, hs_host, MOfst_host, r_host, k_host, BOUND_host,
@@ -221,7 +270,7 @@ int validate(dataset* ds){
 
 int main(int argc, char* argv[]){
     dataset* ds = (dataset*) malloc(sizeof(dataset));
-    char* dsPath = "data/peru.clean";
+    char* dsPath = "data/small_peru.clean";
     readDataset(dsPath, ds);
     printf("Ready to work on dataset of %d images, with %d pixels each\n", ds->N, 
             ds->m);
