@@ -75,10 +75,9 @@ __global__ void gpu_mmMulFilt_naive(float* X, float* X_t, float* y,
 }
 
 // --- Kernel 3 ---
-// Batched mat-inversion
-// Requires a grid of ds->m blocks, with y = K, and x = 2K
+// Naive mat-inversion
 template <int K> 
-__global__ void gpu_batchMatInv(float* A, int m){
+__global__ void gpu_batchMatInv(float* A, float* A_inv, int m){
     int pix = blockIdx.x;
     // We only use threadIdx here since we get a block size of 16*8
     int k1 = threadIdx.y;
@@ -87,7 +86,65 @@ __global__ void gpu_batchMatInv(float* A, int m){
     __shared__ float Ash[K*2*K];
     Ash[I2(k1, k2, 2*K)] = (k2 < K) ? A[I3(pix, k1, k2, K, K)] : (k2 == K + k1);
     __syncthreads();
+
+    // This is the one from the futhark code
+    for(int i = 0; i < K; i++){
+        // K, j = row, col = k1, k2
+        float v1 = Ash[i];
+        float tmp = 0.0f;
+        if (v1 == 0.0){
+            tmp = Ash[I2(k1,k2,K*2)];
+        } else {
+            float x = (Ash[k2] / v1);
+            if( k1 < K-1 ){
+                tmp = Ash[I2(k1+1,k2,2*K)] - Ash[I2(k1+1, i, 2*K)] * x;
+            }
+            else{
+                tmp = x;
+            }
+        }
+        __syncthreads();
+        Ash[I2(k1, k2, 2*K)] = tmp;
+    }
+    if (k2 < K)
+        A_inv[I3(pix, k1, k2, K, K)] = Ash[I2(k1, k2 + K, 2*K)];
+
+}
+//
+// Batched mat-inversion
+// Requires a grid of ds->m blocks, with y = K, and x = 2K
+template <int K> 
+__global__ void gpu_batchMatInv_old(float* A, float* A_inv, int m){
+    int pix = blockIdx.x;
+    // We only use threadIdx here since we get a block size of 16*8
+    int k1 = threadIdx.y;
+    int k2 = threadIdx.x;
+    // Fill shared array
+    __shared__ float Ash[K*2*K];
+    Ash[I2(k1, k2, 2*K)] = (k2 < K) ? A[I3(pix, k1, k2, K, K)] : (k2 == K + k1);
     __syncthreads();
+    // Do the transformation / elimination
+    for (int q = 0; q < K; q++){
+        float vq = Ash[I2(0,q,2*K)];
+        float tmp = 0.0f;
+        if (fabs(vq) <= 0.001f)
+            tmp = Ash[I2(k1, k2, 2*K)];
+        else{
+            float x = Ash[I2(0, k2, 2*K)] / vq;
+            if (k1 == K-1){
+                tmp = x;
+            } else{
+                tmp = Ash[I2(k1 + 1, k2, 2*K)] - Ash[I2(k1 + 1, q, 2*K)] * x;
+            }
+        }
+        __syncthreads();
+        Ash[I2(k1, k2, 2*K)] = tmp;
+        __syncthreads();
+
+    }
+    // Copy back to global memory
+    if (k2 < K)
+        A_inv[I3(pix, k1, k2, K, K)] = Ash[I2(k1, k2 + K, 2*K)];
     
 }
 //
