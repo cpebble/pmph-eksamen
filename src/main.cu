@@ -230,8 +230,14 @@ int validate(dataset* ds){
         // Every block handles one inversion. Since k2p2 is less than 23 we have 2*k^2 < 1024
         dim3 threadsPerBlock(2*k2p2_,k2p2_);
         dim3 numBlocks(ds->m);
-        gpu_batchMatInv<8><<<numBlocks, threadsPerBlock>>>(Xsqr_dev, ds->m);
+        // Hardcoded magic number 8 = K because i need to
+        gpu_batchMatInv_naive<8><<<numBlocks, threadsPerBlock>>>(Xsqr_dev, Xinv_dev, ds->m);
     }
+    printf("Validating inversion\n");
+    float* Xinv_dev_v = (float*)malloc(k2p2_*k2p2_*ds->m*sizeof(float));
+    cudaMemcpy(Xinv_dev_v, Xinv_dev, k2p2_*k2p2_*ds->m*sizeof(float), cudaMemcpyDeviceToHost);
+    validateMatrices(Xinv_host, Xinv_dev_v, ds->m, k2p2_, k2p2_, 0.01f);
+    free(Xinv_dev_v);
     printf("[!]K3 Done\n");
 
     // Kernel 4
@@ -243,14 +249,36 @@ int validate(dataset* ds){
     float* beta0_host = (float*) malloc(ds->m * k2p2_ * sizeof(float));
     float* beta0_dev; cudaMalloc((void**)&beta0_dev, ds->m * k2p2_ * sizeof(float));
     seq_mvMulFilt(Xh_host, Yh_host, beta0_host, ds->m, k2p2_, ds->n);
+    {
+        dim3 threadsPerBlock(16, 16);
+        dim3 numBlocks((ds->m / threadsPerBlock.y) + 1, k2p2_ / threadsPerBlock.y + 1 );
+        gpu_mvMulFilt<<<numBlocks, threadsPerBlock>>>
+            (Xh_dev, Yh_dev, beta0_dev, ds->m, k2p2_, ds->n);
+    }
+    printf("Validating beta0\n");
+    float* beta0_dev_v = (float*)malloc(ds->m*k2p2_*sizeof(float));
+    cudaMemcpy(beta0_dev_v, beta0_dev, ds->m*k2p2_*sizeof(float), cudaMemcpyDeviceToHost);
+    validateMatrices(beta0_host, beta0_dev_v, 0, ds->m, k2p2_, 0.01f);
+    free(beta0_dev_v);
 
     printf("Unfiltered beta and y_preds\n");
     float* beta_host = (float*) malloc(ds->m * k2p2_*sizeof(float));
-    float* beta_dev; cudaMalloc((void**)&beta_dev, ds->m * k2p2 * sizeof(float));
+    float* beta_dev; cudaMalloc((void**)&beta_dev, ds->m * k2p2_ * sizeof(float));
     // Xinv is a mxKxK matrix
     // Bea0 is a mxK matrix
     // Output is a mxK matrix
     seq_mvMul(Xinv_host, beta0_host, beta_host, ds->m, k2p2_, k2p2_);
+    {
+        dim3 threadsPerBlock(16, 16);
+        dim3 numBlocks((ds->m / threadsPerBlock.y) + 1, k2p2_ / threadsPerBlock.y + 1 );
+        gpu_mvMul<<<numBlocks, threadsPerBlock>>>
+            (Xinv_dev, beta0_dev, beta_dev, ds->m, k2p2_, k2p2_);
+    }
+    printf("Validating beta\n");
+    float* beta_dev_v = (float*)malloc(ds->m * k2p2_ * sizeof(float));
+    cudaMemcpy(beta_dev_v, beta_dev, ds->m * k2p2_*sizeof(float), cudaMemcpyDeviceToHost);
+    validateMatrices(beta_host, beta_dev_v, 0, ds->m, k2p2_, 0.01f);
+    free(beta_dev_v);
 
     // Xt     is a NxK matrix
     // beta   is a mxK matrix
@@ -263,7 +291,34 @@ int validate(dataset* ds){
     float* Xt_dev; cudaMalloc((void**)&Xt_dev, k2p2_ * ds->N * sizeof(float));
 
     seq_transpose(X_host, Xt_host, k2p2_, ds->N);
+    // GPU Transpose
+    {
+        const int T = 32; int height = k2p2_; int width = ds->N;
+        // 1. setup block and grid parameters
+        unsigned int sh_mem_size = T * (T+1) * sizeof(float); 
+        int  dimy = (height+T-1) / T; 
+        int  dimx = (width +T-1) / T;
+        dim3 block(T, T, 1);
+        dim3 grid (dimx, dimy, 1);
+
+        matTransposeTiledKer<T><<<grid, block, sh_mem_size>>>
+            (X_dev, Xh_dev, height, width);
+        cudaDeviceSynchronize();
+        
+    }
     seq_mvMulFilt(Xt_host, beta_host, y_preds_host, ds->m, ds->N, k2p2_);
+    // GPU mvMul
+    {
+        dim3 threadsPerBlock(16, 16);
+        dim3 numBlocks((ds->m / threadsPerBlock.y) + 1, ds->N / threadsPerBlock.y + 1 );
+        gpu_mvMulFilt<<<numBlocks, threadsPerBlock>>>
+            (Xt_dev, beta_dev, y_preds_dev, ds->m, ds->N, k2p2_);
+    }
+    printf("Validating ypreds\n");
+    float* y_preds_dev_v = (float*)malloc(ds->m * k2p2_ * sizeof(float));
+    cudaMemcpy(y_preds_dev_v, y_preds_dev, ds->m * k2p2_*sizeof(float), cudaMemcpyDeviceToHost);
+    validateMatrices(y_preds_host, y_preds_dev_v, 0, ds->m, k2p2_, 0.01f);
+    free(y_preds_dev_v);
     printf("[!]K4 Done\n");
 
     // Kernel 5

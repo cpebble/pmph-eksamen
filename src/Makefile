@@ -20,6 +20,9 @@ $(EXECUTABLE1): $(SRC1) $(HELPERS)
 run: $(EXECUTABLE1) 
 	./$(EXECUTABLE1)
 
+debug: $(EXECUTABLE1)
+	cuda-gdb $(EXECUTABLE1)
+
 clean:
 	rm -f $(EXECUTABLE1)
 

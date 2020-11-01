@@ -110,6 +110,40 @@ __global__ void gpu_batchMatInv(float* A, float* A_inv, int m){
         A_inv[I3(pix, k1, k2, K, K)] = Ash[I2(k1, k2 + K, 2*K)];
 
 }
+// The simple unoptimized from cpu
+//
+template <int K> 
+__global__ void gpu_batchMatInv_naive(float* A, float* A_inv, int m){
+    int pix = blockIdx.x;
+    // We only use threadIdx here since we get a block size of 16*8
+    int k1 = threadIdx.y;
+    int k2 = threadIdx.x;
+    int width = 2*K;
+    // Fill shared array
+    __shared__ float Ash[K*2*K];
+    Ash[I2(k1, k2, 2*K)] = (k2 < K) ? A[I3(pix, k1, k2, K, K)] : (k2 == K + k1);
+    __syncthreads();
+    for(int i = 0; i < K; i++){
+        float curEl = Ash[I2(i, i, 2*K)];
+        float tmp = 0.0f;
+        if (Ash[I2(i, i, width)] == 0.0)
+            continue;
+        
+        if (i != k1){
+            float ratio = Ash[I2(k1, i, width)] / Ash[I2(i, i, width)];
+            tmp = Ash[I2(k1, k2, width)] - ratio*Ash[I2(i, k2, width)];
+        }
+        __syncthreads();
+        if (i != k1)
+            Ash[I2(k1, k2, width)] = tmp;
+        Ash[I2(i, k2, width)] /= curEl;
+        __syncthreads();
+    }
+
+    if (k2 < K)
+        A_inv[I3(pix, k1, k2, K, K)] = Ash[I2(k1, k2 + K, 2*K)];
+    
+}
 //
 // Batched mat-inversion
 // Requires a grid of ds->m blocks, with y = K, and x = 2K
@@ -147,6 +181,37 @@ __global__ void gpu_batchMatInv_old(float* A, float* A_inv, int m){
         A_inv[I3(pix, k1, k2, K, K)] = Ash[I2(k1, k2 + K, 2*K)];
     
 }
+// --- Kernel 4
+// Matrix-Vector multiplication
+__global__ void gpu_mvMulFilt(float* X, float* y, float* y_out, int pixels, int height, int width){
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    if ( i < pixels && j < height ){
+        float accum = 0.0f;
+        for(int k = 0; k < width; i++){
+            float a = X[I2(j, k, width)];
+            float b = y[I2(i, k, width)];
+            if (!isnan(b))
+                accum += a*b;
+        }
+        y_out[I2(i, j, height)] = accum;
+    }
+}
+__global__ void gpu_mvMul(float* X, float* y, float* y_out, int pixels, int height, int width){
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    if ( i < pixels && j < height ){
+        float accum = 0.0f;
+        for(int k = 0; k < width; i++){
+            float a = X[I3(i, j, k, width, width)];
+            float b = y[I2(i, k, width)];
+            accum += a*b;
+        }
+        y_out[I2(i, j, height)] = accum;
+    }
+}
+//
+//
 //
 int catchthis(int n){
 
