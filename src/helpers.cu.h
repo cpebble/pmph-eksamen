@@ -16,6 +16,14 @@ __device__ float logplus_dev(float x){
         return logf(x);
     return 1;
 }
+__global__ void hmaxCalc(int* h, int n, int* hmax){
+    int max = -1;
+    for(int i = 0; i < n; i++){
+        if (h[i] > max)
+            max = h[i];
+    }
+    hmax[0] = max;
+}
 int timeval_subtract(struct timeval *result, struct timeval *t2, struct timeval *t1)
 {
     unsigned int resolution=1000000;
@@ -23,9 +31,6 @@ int timeval_subtract(struct timeval *result, struct timeval *t2, struct timeval 
     result->tv_sec = diff / resolution;
     result->tv_usec = diff % resolution;
     return (diff<0);
-}
-int testme(int n){
-    return n*n;
 }
 void printMatrix(float* mat, int rows, int cols){
     printf("[");
