@@ -321,7 +321,11 @@ __global__ void gpu_NSSigma(float* Y_errors, float* Y_historic,
     __shared__ int nss_tmp_scanned[512];
 
     // it holds t < n since we set block size explicit
-    nss_tmp[t] = 1 - (isnan(Y_historic[I2(pix, t, n)]));
+    if(t >= n){
+        nss_tmp[t] = 0;
+    } else {
+        nss_tmp[t] = 1 - (isnan(Y_historic[I2(pix, t, n)]));
+    }
     nss_tmp_scanned[t] = scanIncBlock<int>(nss_tmp, t);
     __syncthreads();
     int ns = nss_tmp_scanned[n - 1];
@@ -331,9 +335,11 @@ __global__ void gpu_NSSigma(float* Y_errors, float* Y_historic,
     y_error_filtered[t] = y_error_filtered[t] * y_error_filtered[t];
     __shared__ float y_error_scanned[512];
     y_error_scanned[t] = scanIncBlock<float>(y_error_filtered, t);
+    __syncthreads();
     // We really only need one thread to calculate and return values
     if (t == 0){
         float sigma = y_error_scanned[ns-1];
+        //printf("Got sigma %f\n", sigma);
         sigmas[pix] = sqrtf(sigma / (float)(ns - k));
         hs[pix] = (int) ( ((float) ns) * hfrac );
         nss[pix] = ns;
@@ -354,7 +360,55 @@ __global__ void gpu_msFst(float* y_error, int* ns, int* hs, float* MO_fsts, int 
         }
     }
 }
+__global__ void gpu_calcBound(int* mappingIndices, float* BOUND, float lam, int N, int n, int mIm1){
+    int q = blockIdx.x * blockDim.x + threadIdx.x;
+    if (q >= N - n)
+        return;
+    int t = q + n;
+    int time = mappingIndices[t];
+    float tmp = logplus_dev( ((float)time) / ((float) mIm1));
+    BOUND[q] = lam * (sqrtf(tmp));
+}
 
+// --- Kernel 8
+// Outer parall size: m
+// Inner parallel size: N
+__global__ void gpu_mosum(int* Nss, int* nss, float* sigmas, int* hs, float* MO_fsts,
+        float* y_errors, int* val_inds, float* BOUND, int* breaks, int N, int n, int m){
+    // Calc MO
+    int pix = blockIdx.x;
+    int j = threadIdx.x;
+    __shared__ float MO[512];
+    __shared__ float MO_[512];
+    if(j < N - n){
+        if (j >= Nss[pix] - nss[pix]){
+            MO[j] = 0.0f;
+        } else if( j == 0){
+            MO[j] = MO_fsts[pix];
+        } else {
+            MO[j] = (-y_errors[I2(pix, nss[pix]-hs[pix]+j, N)] +
+                     y_errors[I2(pix, nss[pix]+j, N)]);
+        }
+        __syncthreads();
+        MO_[j] = scanIncBlock<float>(MO, j);
+        __syncthreads();
+        MO_[j] = MO_[j] / (sigmas[pix] * (sqrtf((float)nss[pix])));
+        // Now with Mo calculated, just get us a list of breaks
+    }
+    // Could be done in parallel with reduce, but this is way simpler implemented
+    if (j == 0){
+        breaks[pix] = -1;
+        for(int i = 0; i < N - n; i++){
+            if (i < (Nss[pix] - nss[pix]) && !(isnan(MO_[i]))){
+                if(fabs(MO_[i]) > BOUND[i]){
+                    breaks[pix] = val_inds[i];
+                    break;
+                }
+            }
+        }
+    }
+
+}
 // Dummy func to ease compiler errors
 int catchthis(int n){
 

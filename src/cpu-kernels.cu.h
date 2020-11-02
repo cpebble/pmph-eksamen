@@ -318,7 +318,7 @@ void seq_msFst(float* y_error, int* ns, int* hs, float* MO_fsts, int m, int N, i
 // val_inds(k) = mxN
 // BOUND       = 1x(N-n)
 void seq_mosum(int* Nss, int* nss, float* sigmas, int* hs, float* MO_fsts, float* y_errors,
-        int* val_inds, float* BOUND, int N, int n, int m){
+        int* val_inds, float* BOUND, int* breaks, int N, int n, int m){
     for(int pix = 0; pix < m; pix++){
         // Calculates Moving sums
         float mo[N-n];
@@ -340,10 +340,12 @@ void seq_mosum(int* Nss, int* nss, float* sigmas, int* hs, float* MO_fsts, float
         }
         // Find the first break
         int fbreak = -1;
+        breaks[pix] = -1;
         for(int j = 0; j < N - n; j++){
             if (j < (Nss[pix] - nss[pix]) && !(isnan(mo[j]))){
                 if (fabs(mo[j]) > BOUND[j]){
                     fbreak = val_inds[j];
+                    breaks[pix] = val_inds[j];
                     break;
                 }
                     

@@ -11,6 +11,11 @@ float logplus(float x){
         return logf(x);
     return 1;
 }
+__device__ float logplus_dev(float x){
+    if (x > expf(1) )
+        return logf(x);
+    return 1;
+}
 int timeval_subtract(struct timeval *result, struct timeval *t2, struct timeval *t1)
 {
     unsigned int resolution=1000000;

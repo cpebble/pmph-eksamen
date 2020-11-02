@@ -151,7 +151,7 @@ int validate(dataset* ds){
     }
     // And gpu slicing
     {
-        dim3 threadsPerBlock(1,1);
+        dim3 threadsPerBlock(8,128);
         dim3 numBlocks((ds->n / threadsPerBlock.x) + 1, (k2p2_ / threadsPerBlock.y) + 1);
         sliceMatrix<<<numBlocks, threadsPerBlock>>>(X_dev, Xh_dev, k2p2_, ds->n, ds->N);
         dim3 y_numBlocks((ds->n / threadsPerBlock.x) + 1, (ds->m / threadsPerBlock.y) + 1);
@@ -259,7 +259,7 @@ int validate(dataset* ds){
     printf("Validating beta0\n");
     float* beta0_dev_v = (float*)malloc(ds->m*k2p2_*sizeof(float));
     cudaMemcpy(beta0_dev_v, beta0_dev, ds->m*k2p2_*sizeof(float), cudaMemcpyDeviceToHost);
-    validateMatrices(beta0_host, beta0_dev_v, 1, ds->m, k2p2_, 0.01f);
+    validateMatrices(beta0_host, beta0_dev_v, 1, ds->m, k2p2_, 0.1f);
     free(beta0_dev_v);
 
     printf("Unfiltered beta and y_preds\n");
@@ -279,7 +279,7 @@ int validate(dataset* ds){
     cudaDeviceSynchronize();
     float* beta_dev_v = (float*)malloc(ds->m * k2p2_ * sizeof(float));
     cudaMemcpy(beta_dev_v, beta_dev, ds->m * k2p2_*sizeof(float), cudaMemcpyDeviceToHost);
-    validateMatrices(beta_host, beta_dev_v, 1, ds->m, k2p2_, 0.01f);
+    validateMatrices(beta_host, beta_dev_v, 1, ds->m, k2p2_, 0.1f);
     free(beta_dev_v);
 
     // Xt     is a NxK matrix
@@ -395,10 +395,16 @@ int validate(dataset* ds){
         BOUND_host[q] = ds->lam * (sqrtf(tmp));
     }
     {
-        dim3 threadsPerBlock(hmax);
+        dim3 threadsPerBlock(ds->N - ds->n);
         dim3 numBlocks(ds->m);
         gpu_msFst<<<numBlocks, threadsPerBlock>>>
             (r_dev, ns_dev, hs_dev, MOfst_dev, ds->m, ds->N, hmax);
+    }
+    {
+        dim3 threadsPerBlock(ds->N - ds->n);
+        dim3 numBlocks(1);
+        gpu_calcBound<<<numBlocks, threadsPerBlock>>>
+            (MI_dev, BOUND_dev, ds->lam, ds->N, ds->n, ds->mappingIndices[ds->N-1]);
     }
     printf("Validating MOfst\n");
     float* MOfst_dev_v = (float*)malloc(ds->m * sizeof(float));
@@ -406,34 +412,43 @@ int validate(dataset* ds){
     // We are starting to see some serious divergence from host calculations. However they
     // still look right in the debugger
     validateMatrices(MOfst_host, MOfst_dev_v, 1, 1, ds->m, 0.5f); 
+    float* BOUND_dev_v = (float*)malloc((ds->N - ds->n) * sizeof(float));
+    cudaMemcpy(BOUND_dev_v, BOUND_dev, (ds->N - ds->n) * sizeof(float), cudaMemcpyDeviceToHost);
 
     free(MOfst_dev_v);
+    free(BOUND_dev_v);
 
-    return 0;
     printf("[!]K7 Done\n");
     
 
-    float* breaks_host = (float*) malloc(ds->m * sizeof(float*));
-    float* breaks_dev; cudaMalloc((void**)&breaks_dev, ds->m * sizeof(float*));
+    int* breaks_host = (int*) malloc(ds->m * sizeof(int*));
+    int* breaks_dev; cudaMalloc((void**)&breaks_dev, ds->m * sizeof(int*));
     
     // Moving sums
     seq_mosum(Ns_host, ns_host, sigmas_host, hs_host, MOfst_host, r_host, k_host, BOUND_host,
-            ds->N, ds->n, ds->m);
+            breaks_host, ds->N, ds->n, ds->m);
 
-    printMatrix(breaks_host, 1, 3);
-    // Free everything!!!
-    // TODO:
-    //free(X_host);
-    //free(Xh_host);
+    {
+        dim3 threadsPerBlock(ds->N - ds->n);
+        dim3 numBlocks(ds->m);
+        gpu_mosum<<<numBlocks, threadsPerBlock>>>(Ns_dev, ns_dev, sigmas_dev, hs_dev,
+                MOfst_dev, r_dev, k_dev, BOUND_dev, breaks_dev, ds->N, ds->n, ds->m);
+    }
+    int* breaks_dev_v = (int*)malloc((ds->m) * sizeof(int));
+    cudaMemcpy(breaks_dev_v, breaks_dev, (ds->m) * sizeof(int), cudaMemcpyDeviceToHost);
+    float avg = 0.0f;
+    for(int i = 0; i < ds->m; i++){
+        int diff = fabs(breaks_host[i] - breaks_dev_v[i]);
+        avg = (avg + diff) / 2;
+    }
+    printf("Average break difference: %f\n", avg);
     return 0;
-    
-    
 }
 
 
 int main(int argc, char* argv[]){
     dataset* ds = (dataset*) malloc(sizeof(dataset));
-    char* dsPath = "data/small_peru.clean";
+    char* dsPath = "data/peru.clean";
     readDataset(dsPath, ds);
     printf("Ready to work on dataset of %d images, with %d pixels each\n", ds->N, 
             ds->m);
