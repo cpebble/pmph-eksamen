@@ -1,6 +1,8 @@
 // This contains the parallel kernels
 #ifndef _CUDA_KERNELS
 #define _CUDA_KERNELS
+#define lgWARP 5
+#define WARP ( 1<<lgWARP )
 
 /// HELPERS
 
@@ -33,6 +35,94 @@ __global__ void matTransposeTiledKer(float* A, float* B, int heightA, int widthA
     if( x < heightA && y < widthA )
         B[y*heightA + x] = tile[threadIdx.x*(T+1) + threadIdx.y];
 }
+// Yanked from w2
+template <class Tp>
+__device__ inline Tp scanIncWarp( volatile Tp* ptr, const unsigned int idx ) {
+    const unsigned int lane = idx & (WARP-1);
+    #pragma unroll
+    for(int d = 0; d < lgWARP; d++){
+        int h = 1 << d;
+        if (lane >= h){
+            ptr[idx] = (ptr[idx-h] + ptr[idx]);
+        }
+    }
+    return (ptr[idx]);
+}
+
+template <class Tp> 
+__device__ inline Tp
+scanIncBlock(volatile Tp* ptr, const unsigned int idx) {
+    const unsigned int lane   = idx & (WARP-1);
+    const unsigned int warpid = idx >> lgWARP;
+
+
+    // 1. perform scan at warp level
+    Tp res = scanIncWarp<Tp>(ptr,idx);
+    __syncthreads();
+
+    // 2. place the end-of-warp results in
+    //   the first warp. This works because
+    //   warp size = 32, and 
+    //   max block size = 32^2 = 1024
+    if (lane == (WARP-1) && warpid < 31) { 
+        ptr[warpid] = (Tp)(ptr[idx]);
+    }
+    __syncthreads();
+    // 3. scan again the first warp
+    if (warpid == 0) scanIncWarp<Tp>(ptr, idx);
+    __syncthreads();
+
+    // 4. accumulate results from previous step;
+    if (warpid > 0) {
+        res = (ptr[warpid-1] + res);
+    }
+    return res;
+}
+//let filterPadWithKeys [n] 't
+           //(p : (t -> bool))
+               //(dummy : t)           
+               //(arr : [n]t) : ([n](t,i32), i32) =
+                      //let tfs = map (\a -> if p a then 1 else 0) arr
+                      //let isT = scan (+) 0 tfs
+                      //let i   = last isT
+                      //let inds= map2 (\a iT -> if p a then iT-1 else -1) arr isT
+                      //let rs  = scatter (replicate n dummy) inds arr
+                      //let ks  = scatter (replicate n 0) inds (iota n)
+                      //in  (zip rs ks, i) 
+
+__device__ int filterPadWithKeys(float* arr, float* Rs, int* Ks, int n){
+    // Can't handle more than 1024 "n" values. 
+    // To fix this we need to allocate shared memory dynamically, which is :'(
+    __shared__ int tfs[512];
+    __shared__ int isT[512];
+    __shared__ int inds[512];
+    // Get this into local thread so we can access it uncoalesced
+    //
+    int i = threadIdx.x;
+    if (i >= n)
+        return -1;
+    __shared__ float arr_shr[512];
+    arr_shr[i] = arr[i];
+    __syncthreads();
+    tfs[i] = isnan(arr_shr[i]);
+    __syncthreads();
+    isT[i] = scanIncBlock<int>(tfs, i);
+    __syncthreads();
+    int i_ = isT[n];
+    inds[i] = isnan(arr[i]) ? isT[i]-1 : -1;
+    __syncthreads();
+    // Now scatter using calculated values
+    int c = inds[i];
+    if(i < i_){
+        Ks[c] = i;
+        Rs[c] = arr[i];
+    } else {
+        Ks[i] = 0;
+        Rs[i] = NAN;
+    }
+    return i_;
+}
+
 
 // Kernels
 // --- Kernel 1 ---
@@ -184,11 +274,13 @@ __global__ void gpu_batchMatInv_old(float* A, float* A_inv, int m){
 // --- Kernel 4
 // Matrix-Vector multiplication
 __global__ void gpu_mvMulFilt(float* X, float* y, float* y_out, int pixels, int height, int width){
-    int i = blockIdx.y * blockDim.y + threadIdx.y;
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    //int i = blockIdx.y * blockDim.y + threadIdx.y;
+    //int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.x;
+    int j = threadIdx.x;
     if ( i < pixels && j < height ){
         float accum = 0.0f;
-        for(int k = 0; k < width; i++){
+        for(int k = 0; k < width; k++){
             float a = X[I2(j, k, width)];
             float b = y[I2(i, k, width)];
             if (!isnan(b))
@@ -198,11 +290,11 @@ __global__ void gpu_mvMulFilt(float* X, float* y, float* y_out, int pixels, int 
     }
 }
 __global__ void gpu_mvMul(float* X, float* y, float* y_out, int pixels, int height, int width){
-    int i = blockIdx.y * blockDim.y + threadIdx.y;
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.x;
+    int j = threadIdx.x;
     if ( i < pixels && j < height ){
         float accum = 0.0f;
-        for(int k = 0; k < width; i++){
+        for(int k = 0; k < width; k++){
             float a = X[I3(i, j, k, width, width)];
             float b = y[I2(i, k, width)];
             accum += a*b;
@@ -210,9 +302,26 @@ __global__ void gpu_mvMul(float* X, float* y, float* y_out, int pixels, int heig
         y_out[I2(i, j, height)] = accum;
     }
 }
-//
-//
-//
+
+// --- Kernel 5
+// Y Error Prediction
+// Requires blockDim.x  = N
+// Requires numBlocks.x = m
+__global__ void gpu_YErrorCalculation(float* Y, float* Ypred, float* R, int* K, int* Ns, int m, int N){
+    float y_err_tmp[512];
+    int pix = blockIdx.x;
+    int i = threadIdx.x;
+    float ye = Y[I2(pix, i, N)];
+    float yep= Ypred[I2(pix, i, N)];
+    y_err_tmp[i] = (isnan(ye)) ? ye : ye-yep;
+    int n = filterPadWithKeys(y_err_tmp, &R[I2(pix, 0, N)], &K[I2(pix, 0, N)], N);
+    if (threadIdx.x == 0){
+        Ns[pix] = n;
+    }
+}
+
+
+
 int catchthis(int n){
 
     return n*n;

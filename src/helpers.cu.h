@@ -112,7 +112,7 @@ int validateMatrices(float* matA, float* matB, int mats, int rows, int cols, flo
                 float tmpB = matB[I3(m,r,c,rows,cols)];
                 if(fabs(tmpA - tmpB) > eps){
                     printf("You dun goofed @ %d, %d, %d, expected: %f, got: %f, eps is: %f\n",
-                            m,c,r, tmpA, tmpB, eps
+                            m,r,c, tmpA, tmpB, eps
                           );
                     return 1;
                 }

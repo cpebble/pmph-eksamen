@@ -250,15 +250,16 @@ int validate(dataset* ds){
     float* beta0_dev; cudaMalloc((void**)&beta0_dev, ds->m * k2p2_ * sizeof(float));
     seq_mvMulFilt(Xh_host, Yh_host, beta0_host, ds->m, k2p2_, ds->n);
     {
-        dim3 threadsPerBlock(16, 16);
-        dim3 numBlocks((ds->m / threadsPerBlock.y) + 1, k2p2_ / threadsPerBlock.y + 1 );
+        //dim3 threadsPerBlock(16, 16);
+        int threadsPerBlock = ds->n;
+        int numBlocks = ds->m;
         gpu_mvMulFilt<<<numBlocks, threadsPerBlock>>>
             (Xh_dev, Yh_dev, beta0_dev, ds->m, k2p2_, ds->n);
     }
     printf("Validating beta0\n");
     float* beta0_dev_v = (float*)malloc(ds->m*k2p2_*sizeof(float));
     cudaMemcpy(beta0_dev_v, beta0_dev, ds->m*k2p2_*sizeof(float), cudaMemcpyDeviceToHost);
-    validateMatrices(beta0_host, beta0_dev_v, 0, ds->m, k2p2_, 0.01f);
+    validateMatrices(beta0_host, beta0_dev_v, 1, ds->m, k2p2_, 0.01f);
     free(beta0_dev_v);
 
     printf("Unfiltered beta and y_preds\n");
@@ -269,15 +270,16 @@ int validate(dataset* ds){
     // Output is a mxK matrix
     seq_mvMul(Xinv_host, beta0_host, beta_host, ds->m, k2p2_, k2p2_);
     {
-        dim3 threadsPerBlock(16, 16);
-        dim3 numBlocks((ds->m / threadsPerBlock.y) + 1, k2p2_ / threadsPerBlock.y + 1 );
+        dim3 threadsPerBlock(8);
+        dim3 numBlocks((ds->m) + 1);
         gpu_mvMul<<<numBlocks, threadsPerBlock>>>
             (Xinv_dev, beta0_dev, beta_dev, ds->m, k2p2_, k2p2_);
     }
     printf("Validating beta\n");
+    cudaDeviceSynchronize();
     float* beta_dev_v = (float*)malloc(ds->m * k2p2_ * sizeof(float));
     cudaMemcpy(beta_dev_v, beta_dev, ds->m * k2p2_*sizeof(float), cudaMemcpyDeviceToHost);
-    validateMatrices(beta_host, beta_dev_v, 0, ds->m, k2p2_, 0.01f);
+    validateMatrices(beta_host, beta_dev_v, 1, ds->m, k2p2_, 0.01f);
     free(beta_dev_v);
 
     // Xt     is a NxK matrix
@@ -302,22 +304,22 @@ int validate(dataset* ds){
         dim3 grid (dimx, dimy, 1);
 
         matTransposeTiledKer<T><<<grid, block, sh_mem_size>>>
-            (X_dev, Xh_dev, height, width);
+            (X_dev, Xt_dev, height, width);
         cudaDeviceSynchronize();
         
     }
     seq_mvMulFilt(Xt_host, beta_host, y_preds_host, ds->m, ds->N, k2p2_);
     // GPU mvMul
     {
-        dim3 threadsPerBlock(16, 16);
-        dim3 numBlocks((ds->m / threadsPerBlock.y) + 1, ds->N / threadsPerBlock.y + 1 );
+        int threadsPerBlock = ds->N;
+        int numBlocks = ds->m;
         gpu_mvMulFilt<<<numBlocks, threadsPerBlock>>>
             (Xt_dev, beta_dev, y_preds_dev, ds->m, ds->N, k2p2_);
     }
     printf("Validating ypreds\n");
-    float* y_preds_dev_v = (float*)malloc(ds->m * k2p2_ * sizeof(float));
-    cudaMemcpy(y_preds_dev_v, y_preds_dev, ds->m * k2p2_*sizeof(float), cudaMemcpyDeviceToHost);
-    validateMatrices(y_preds_host, y_preds_dev_v, 0, ds->m, k2p2_, 0.01f);
+    float* y_preds_dev_v = (float*)malloc(ds->m * ds->N * sizeof(float));
+    cudaMemcpy(y_preds_dev_v, y_preds_dev, ds->m * ds->N*sizeof(float), cudaMemcpyDeviceToHost);
+    validateMatrices(y_preds_host, y_preds_dev_v, 1, ds->m, ds->N, 0.1f);
     free(y_preds_dev_v);
     printf("[!]K4 Done\n");
 
@@ -333,6 +335,17 @@ int validate(dataset* ds){
     int* Ns_dev; cudaMalloc((void**)&Ns_dev, ds->m*sizeof(int));
 
     seq_YErrorCalculation(ds->images, y_preds_host, r_host, k_host, Ns_host, ds->m, ds->N);
+    {
+        dim3 threadsPerBlock(ds->N);
+        dim3 numBlocks(ds->m);
+        gpu_YErrorCalculation<<<numBlocks, threadsPerBlock>>>
+            (images_dev, y_preds_dev, r_dev, k_dev, Ns_dev, ds->m, ds->N);
+    }
+    printf("Validating Y errors\n");
+    float* r_dev_v = (float*)malloc(ds->m * ds->N * sizeof(float));
+    cudaMemcpy(r_dev_v, r_dev, ds->m * ds->N *sizeof(float), cudaMemcpyDeviceToHost);
+    validateMatrices(r_host, r_dev_v, 1, ds->m, ds->N, 0.01f);
+    free(r_dev_v);
     
     // Kernel 6
     printf("Calculating Sigmas\n");
