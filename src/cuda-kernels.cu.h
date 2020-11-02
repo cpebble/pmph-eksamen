@@ -104,12 +104,12 @@ __device__ int filterPadWithKeys(float* arr, float* Rs, int* Ks, int n){
     __shared__ float arr_shr[512];
     arr_shr[i] = arr[i];
     __syncthreads();
-    tfs[i] = isnan(arr_shr[i]);
+    tfs[i] = !(isnan(arr_shr[i]));
     __syncthreads();
     isT[i] = scanIncBlock<int>(tfs, i);
     __syncthreads();
-    int i_ = isT[n];
-    inds[i] = isnan(arr[i]) ? isT[i]-1 : -1;
+    int i_ = isT[n-1];
+    inds[i] = (!isnan(arr_shr[i])) ? isT[i]-1 : -1;
     __syncthreads();
     // Now scatter using calculated values
     int c = inds[i];
@@ -314,6 +314,7 @@ __global__ void gpu_YErrorCalculation(float* Y, float* Ypred, float* R, int* K, 
     float ye = Y[I2(pix, i, N)];
     float yep= Ypred[I2(pix, i, N)];
     y_err_tmp[i] = (isnan(ye)) ? ye : ye-yep;
+    __syncthreads();
     int n = filterPadWithKeys(y_err_tmp, &R[I2(pix, 0, N)], &K[I2(pix, 0, N)], N);
     if (threadIdx.x == 0){
         Ns[pix] = n;

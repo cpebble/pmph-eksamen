@@ -361,6 +361,7 @@ int validate(dataset* ds){
     seq_NSSigma(r_host, Yh_host, sigmas_host, hs_host, ns_host, ds->N, ds->n, ds->m, k2p2_, ds->hfrac);
     printf("Sigmas calculated\n");
     printf("[!]K6 Done\n");
+    return 0;
 
     // Kernel 7
     printf("Calculating hmax: ");
