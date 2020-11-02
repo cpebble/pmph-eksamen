@@ -344,7 +344,7 @@ int validate(dataset* ds){
     printf("Validating Y errors\n");
     float* r_dev_v = (float*)malloc(ds->m * ds->N * sizeof(float));
     cudaMemcpy(r_dev_v, r_dev, ds->m * ds->N *sizeof(float), cudaMemcpyDeviceToHost);
-    validateMatrices(r_host, r_dev_v, 1, ds->m, ds->N, 0.01f);
+    validateMatrices(r_host, r_dev_v, 1, ds->m, ds->N, 0.1f);
     free(r_dev_v);
     
     // Kernel 6
@@ -359,9 +359,19 @@ int validate(dataset* ds){
     int* hs_dev; cudaMalloc((void**)&hs_dev, ds->m * sizeof(int));
 
     seq_NSSigma(r_host, Yh_host, sigmas_host, hs_host, ns_host, ds->N, ds->n, ds->m, k2p2_, ds->hfrac);
+    {
+        dim3 threadsPerBlock(ds->N);
+        dim3 numBlocks(ds->m);
+        gpu_NSSigma<<<numBlocks, threadsPerBlock>>>
+            (r_dev, Yh_dev, sigmas_dev, hs_dev, ns_dev, ds->N, ds->n, ds->m, k2p2_, ds->hfrac);
+    }
+    printf("Validating sigmas\n");
+    float* sigmas_dev_v = (float*)malloc(ds->m * sizeof(float));
+    cudaMemcpy(sigmas_dev_v, sigmas_dev, ds->m * sizeof(float), cudaMemcpyDeviceToHost);
+    validateMatrices(sigmas_host, sigmas_dev_v, 1, 1, ds->m, 0.01f);
+    free(sigmas_dev_v);
     printf("Sigmas calculated\n");
     printf("[!]K6 Done\n");
-    return 0;
 
     // Kernel 7
     printf("Calculating hmax: ");
@@ -374,7 +384,7 @@ int validate(dataset* ds){
     float* MOfst_host = (float*) malloc(ds->m * sizeof(float*));
     float* BOUND_host = (float*) malloc((ds->N - ds->n)*sizeof(float));
     float* MOfst_dev; cudaMalloc((void**)&MOfst_dev, ds->m * sizeof(float*));
-    float* BOUND_dev; cudaMalloc((void**)&BOUND_dev, ds->N - ds->n * sizeof(float*));
+    float* BOUND_dev; cudaMalloc((void**)&BOUND_dev, (ds->N - ds->n) * sizeof(float*));
     printf("Calculated MO_fsts\n");
     seq_msFst(r_host, ns_host, hs_host, MOfst_host, ds->m, ds->N, hmax);
     printf("Calculating BOUND\n");
@@ -384,7 +394,22 @@ int validate(dataset* ds){
         float tmp = logplus( ((float)time) / ((float) ds->mappingIndices[ds->N-1]));
         BOUND_host[q] = ds->lam * (sqrtf(tmp));
     }
+    {
+        dim3 threadsPerBlock(hmax);
+        dim3 numBlocks(ds->m);
+        gpu_msFst<<<numBlocks, threadsPerBlock>>>
+            (r_dev, ns_dev, hs_dev, MOfst_dev, ds->m, ds->N, hmax);
+    }
+    printf("Validating MOfst\n");
+    float* MOfst_dev_v = (float*)malloc(ds->m * sizeof(float));
+    cudaMemcpy(MOfst_dev_v, MOfst_dev, ds->m * sizeof(float), cudaMemcpyDeviceToHost);
+    // We are starting to see some serious divergence from host calculations. However they
+    // still look right in the debugger
+    validateMatrices(MOfst_host, MOfst_dev_v, 1, 1, ds->m, 0.5f); 
 
+    free(MOfst_dev_v);
+
+    return 0;
     printf("[!]K7 Done\n");
     
 

@@ -78,17 +78,6 @@ scanIncBlock(volatile Tp* ptr, const unsigned int idx) {
     }
     return res;
 }
-//let filterPadWithKeys [n] 't
-           //(p : (t -> bool))
-               //(dummy : t)           
-               //(arr : [n]t) : ([n](t,i32), i32) =
-                      //let tfs = map (\a -> if p a then 1 else 0) arr
-                      //let isT = scan (+) 0 tfs
-                      //let i   = last isT
-                      //let inds= map2 (\a iT -> if p a then iT-1 else -1) arr isT
-                      //let rs  = scatter (replicate n dummy) inds arr
-                      //let ks  = scatter (replicate n 0) inds (iota n)
-                      //in  (zip rs ks, i) 
 
 __device__ int filterPadWithKeys(float* arr, float* Rs, int* Ks, int n){
     // Can't handle more than 1024 "n" values. 
@@ -113,12 +102,11 @@ __device__ int filterPadWithKeys(float* arr, float* Rs, int* Ks, int n){
     __syncthreads();
     // Now scatter using calculated values
     int c = inds[i];
-    if(i < i_){
+    Ks[i] = 0;
+    Rs[i] = NAN;
+    if(c != -1){
         Ks[c] = i;
-        Rs[c] = arr[i];
-    } else {
-        Ks[i] = 0;
-        Rs[i] = NAN;
+        Rs[c] = arr_shr[i];
     }
     return i_;
 }
@@ -321,8 +309,53 @@ __global__ void gpu_YErrorCalculation(float* Y, float* Ypred, float* R, int* K, 
     }
 }
 
+// --- Kernel 6
+// Inner parallel size is n, for each m pixels. We do map -> scan, map -> scan
+// to avoid writing a warp optimized reduce
+__global__ void gpu_NSSigma(float* Y_errors, float* Y_historic, 
+         float* sigmas, int* hs, int* nss, int N, int n, int m, int k, float hfrac){
+    int pix = blockIdx.x;
+    int t   = threadIdx.x;
+    // Calculate ns
+    __shared__ int nss_tmp[512];
+    __shared__ int nss_tmp_scanned[512];
 
+    // it holds t < n since we set block size explicit
+    nss_tmp[t] = 1 - (isnan(Y_historic[I2(pix, t, n)]));
+    nss_tmp_scanned[t] = scanIncBlock<int>(nss_tmp, t);
+    __syncthreads();
+    int ns = nss_tmp_scanned[n - 1];
+    // Now calc sigma
+    __shared__ float y_error_filtered[512];
+    y_error_filtered[t] = (t < ns) ? Y_errors[I2(pix, t, N)] : 0.0f;
+    y_error_filtered[t] = y_error_filtered[t] * y_error_filtered[t];
+    __shared__ float y_error_scanned[512];
+    y_error_scanned[t] = scanIncBlock<float>(y_error_filtered, t);
+    // We really only need one thread to calculate and return values
+    if (t == 0){
+        float sigma = y_error_scanned[ns-1];
+        sigmas[pix] = sqrtf(sigma / (float)(ns - k));
+        hs[pix] = (int) ( ((float) ns) * hfrac );
+        nss[pix] = ns;
+    }
+}
 
+// --- Kernel 7
+__global__ void gpu_msFst(float* y_error, int* ns, int* hs, float* MO_fsts, int m, int N, int hMax){
+    int pix = blockIdx.x;
+    int i = threadIdx.x;
+    __shared__ float shr_arr[512];
+    if (i < hs[pix]){
+        shr_arr[i] = y_error[I2(pix, i+ns[pix]-hs[pix]+1, N)];   
+        // Dirty arrayless reduce
+        float tmp = scanIncBlock<float>(shr_arr, i);
+        if (i == hs[pix] - 1){
+            MO_fsts[pix] = tmp;
+        }
+    }
+}
+
+// Dummy func to ease compiler errors
 int catchthis(int n){
 
     return n*n;
